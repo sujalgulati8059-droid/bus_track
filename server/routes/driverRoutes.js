@@ -1,0 +1,11 @@
+const express=require("express"),r=express.Router(),{login,logout,getMe,getMyRoute,updateDaySchedule,setTodayStatus,getPassengerBreakdown,updateLocation,stopLocation}=require("../controllers/driverController"),{protectDriver}=require("../middleware/authMiddleware");
+r.post("/login",login);
+r.post("/logout",protectDriver,logout);
+r.get("/me",protectDriver,getMe);
+r.get("/route",protectDriver,getMyRoute);
+r.put("/route/schedule/:day",protectDriver,updateDaySchedule);
+r.put("/status",protectDriver,setTodayStatus);
+r.get("/passengers",protectDriver,getPassengerBreakdown);
+r.post("/location",protectDriver,updateLocation);
+r.post("/location/stop",protectDriver,stopLocation);
+module.exports=r;

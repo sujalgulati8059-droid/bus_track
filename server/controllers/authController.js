@@ -1,0 +1,4 @@
+const Admin=require("../models/Admin"),{sendTokenResponse}=require("../services/authService");
+exports.login=async(req,res,next)=>{try{const{email,password}=req.body;if(!email||!password)return res.status(400).json({success:false,error:"Email and password required"});const admin=await Admin.findOne({email:email.toLowerCase()}).select("+password");if(!admin||!admin.isActive||!(await admin.comparePassword(password)))return res.status(401).json({success:false,error:"Invalid email or password"});admin.lastLogin=new Date();await admin.save({validateBeforeSave:false});sendTokenResponse(admin,200,res);}catch(e){next(e);}};
+exports.logout=(req,res)=>{res.cookie("jwt","loggedout",{expires:new Date(Date.now()+5000),httpOnly:true});res.json({success:true,message:"Logged out"});};
+exports.getMe=async(req,res,next)=>{try{const admin=await Admin.findById(req.admin.id);res.json({success:true,data:{admin}});}catch(e){next(e);}};

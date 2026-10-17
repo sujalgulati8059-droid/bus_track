@@ -1,0 +1,1 @@
+import{useState,useEffect}from"react";export default function useLiveClock(ms=30000){const get=()=>{const n=new Date();return n.getHours()*60+n.getMinutes();};const[v,set]=useState(get);useEffect(()=>{const t=setInterval(()=>set(get()),ms);return()=>clearInterval(t);},[ms]);return v;}

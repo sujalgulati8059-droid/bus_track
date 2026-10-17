@@ -1,0 +1,3 @@
+const mongoose=require("mongoose");
+const s=new mongoose.Schema({slotId:{type:String,required:true,unique:true},row:{type:String,required:true},position:{type:Number,required:true},routeNo:{type:String,default:null},status:{type:String,enum:["empty","parked","departing_soon","departed"],default:"empty"},assignedAt:{type:Date,default:null},departureTime:{type:String,default:null}},{timestamps:true});
+module.exports=mongoose.model("ParkingSlot",s);

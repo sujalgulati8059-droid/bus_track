@@ -1,0 +1,8 @@
+const jwt=require("jsonwebtoken");
+const signToken=id=>jwt.sign({id},process.env.JWT_SECRET,{expiresIn:process.env.JWT_EXPIRES_IN||"7d"});
+const sendTokenResponse=(admin,code,res)=>{const token=signToken(admin._id);res.cookie("jwt",token,{expires:new Date(Date.now()+7*864e5),httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"strict"});admin.password=undefined;res.status(code).json({success:true,token,data:{admin}});};
+const signDriverToken=id=>jwt.sign({id,role:"driver"},process.env.JWT_SECRET,{expiresIn:process.env.JWT_EXPIRES_IN||"30d"});
+const sendDriverTokenResponse=(driver,code,res)=>{const token=signDriverToken(driver._id);res.cookie("driverJwt",token,{expires:new Date(Date.now()+30*864e5),httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"strict"});driver.password=undefined;res.status(code).json({success:true,token,data:{driver}});};
+const signUserToken=id=>jwt.sign({id,role:"user"},process.env.JWT_SECRET,{expiresIn:process.env.JWT_EXPIRES_IN||"30d"});
+const sendUserTokenResponse=(user,code,res)=>{const token=signUserToken(user._id);res.cookie("userJwt",token,{expires:new Date(Date.now()+30*864e5),httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"strict"});user.password=undefined;res.status(code).json({success:true,token,data:{user}});};
+module.exports={signToken,sendTokenResponse,signDriverToken,sendDriverTokenResponse,signUserToken,sendUserTokenResponse};

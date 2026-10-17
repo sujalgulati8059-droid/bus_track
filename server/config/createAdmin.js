@@ -1,0 +1,4 @@
+require("dotenv").config();
+const mongoose=require("mongoose"),Admin=require("../models/Admin");
+async function run(){await mongoose.connect(process.env.MONGO_URI);const e=await Admin.findOne({email:process.env.ADMIN_EMAIL});if(e){console.log("Admin exists:",e.email);return process.exit(0);}const a=await Admin.create({name:process.env.ADMIN_NAME||"CU Admin",email:process.env.ADMIN_EMAIL||"admin@cu.ac.in",password:process.env.ADMIN_PASSWORD||"Admin@123",role:"superadmin"});console.log("Admin created:",a.email,"| Pass:",process.env.ADMIN_PASSWORD);process.exit(0);}
+run().catch(e=>{console.error(e.message);process.exit(1);});

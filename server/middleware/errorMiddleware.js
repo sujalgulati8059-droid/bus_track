@@ -1,0 +1,2 @@
+exports.errorHandler=(err,req,res,next)=>{let s=err.statusCode||500,m=err.message||"Server Error";if(err.code===11000){m=Object.keys(err.keyValue)[0]+" already exists";s=409;}if(err.name==="ValidationError"){m=Object.values(err.errors).map(e=>e.message).join(", ");s=400;}res.status(s).json({success:false,error:m});};
+exports.notFound=(req,res)=>res.status(404).json({success:false,error:"Not found: "+req.originalUrl});

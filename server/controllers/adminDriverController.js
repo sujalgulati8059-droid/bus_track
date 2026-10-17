@@ -1,0 +1,9 @@
+const Driver=require("../models/Driver"),Route=require("../models/Route");
+
+exports.listDrivers=async(req,res,next)=>{try{const drivers=await Driver.find().sort({createdAt:-1}).lean();res.json({success:true,count:drivers.length,data:drivers});}catch(e){next(e);}};
+
+exports.createDriver=async(req,res,next)=>{try{const{name,phone,password,routeNo}=req.body;if(!name||!phone||!password||!routeNo)return res.status(400).json({success:false,error:"name, phone, password and routeNo are required"});const route=await Route.findOne({routeNo});if(!route)return res.status(400).json({success:false,error:"No route with that routeNo"});const exists=await Driver.findOne({phone});if(exists)return res.status(400).json({success:false,error:"A driver with that phone already exists"});const driver=await Driver.create({name,phone,password,routeNo});driver.password=undefined;res.status(201).json({success:true,data:driver});}catch(e){next(e);}};
+
+exports.updateDriver=async(req,res,next)=>{try{const{name,phone,routeNo,isActive,password}=req.body;const driver=await Driver.findById(req.params.id);if(!driver)return res.status(404).json({success:false,error:"Driver not found"});if(routeNo){const route=await Route.findOne({routeNo});if(!route)return res.status(400).json({success:false,error:"No route with that routeNo"});driver.routeNo=routeNo;}if(name)driver.name=name;if(phone)driver.phone=phone;if(typeof isActive==="boolean")driver.isActive=isActive;if(password)driver.password=password;await driver.save();driver.password=undefined;res.json({success:true,data:driver});}catch(e){next(e);}};
+
+exports.deleteDriver=async(req,res,next)=>{try{const driver=await Driver.findByIdAndUpdate(req.params.id,{isActive:false},{new:true});if(!driver)return res.status(404).json({success:false,error:"Driver not found"});res.json({success:true,message:driver.name+" deactivated"});}catch(e){next(e);}};
