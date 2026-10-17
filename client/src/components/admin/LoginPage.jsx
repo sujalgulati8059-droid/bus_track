@@ -9,5 +9,4 @@ export default function LoginPage({onSuccess}){
       {err&&<p className="text-red-600 text-sm">! {err}</p>}
       <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-black font-semibold py-3 rounded-xl transition-all shadow-lg shadow-yellow-500/40 disabled:opacity-60">{loading?"Logging in...":"Login to Dashboard"}</button>
     </form>
-    <p className="text-center text-xs text-slate-400 mt-6">Default: admin@cu.ac.in / Admin@123</p>
   </div></div></div>);}
