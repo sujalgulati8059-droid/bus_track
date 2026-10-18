@@ -1,5 +1,12 @@
-const express=require("express"),r=express.Router(),{login,logout,getMe,getMyRoute,updateDaySchedule,setTodayStatus,getPassengerBreakdown,updateLocation,stopLocation}=require("../controllers/driverController"),{protectDriver}=require("../middleware/authMiddleware");
+const express=require("express"),r=express.Router(),{login,logout,getMe,getMyRoute,updateDaySchedule,setTodayStatus,getPassengerBreakdown,updateLocation,stopLocation}=require("../controllers/driverController"),{protectDriver}=require("../middleware/authMiddleware"),signup=require("../controllers/driverSignupController"),trip=require("../controllers/tripController"),otpLimit=require("../middleware/otpRateLimit");
 r.post("/login",login);
+r.post("/login/otp/send",otpLimit,signup.sendLoginOtp);
+r.post("/login/otp/verify",otpLimit,signup.verifyLoginOtp);
+r.post("/signup/otp/send",otpLimit,signup.sendSignupOtp);
+r.post("/signup/request",otpLimit,signup.submitRequest);
+r.get("/signup/status",otpLimit,signup.getRequestStatus);
+r.post("/trip/start",protectDriver,trip.start);
+r.post("/trip/stop",protectDriver,trip.stop);
 r.post("/logout",protectDriver,logout);
 r.get("/me",protectDriver,getMe);
 r.get("/route",protectDriver,getMyRoute);

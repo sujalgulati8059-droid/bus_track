@@ -12,10 +12,10 @@ const busIcon=(color,h=0,live=false)=>{const c=color||"#a16207";return L.divIcon
 const stopIcon=c=>L.divIcon({className:"",html:`<div style="width:9px;height:9px;border-radius:50%;background:${c||"#a16207"};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)"/>`,iconSize:[9,9],iconAnchor:[4,4]});
 const cuIcon=L.divIcon({className:"",html:`<div style="display:flex;align-items:center;gap:4px;background:#0f172a;color:#fff;padding:5px 10px 5px 8px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,.3);border:2px solid #facc15">🎓 CU Campus</div>`,iconAnchor:[46,16]});
 
-const busPopup=bus=>`<div style="font-family:'DM Sans',sans-serif;min-width:180px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px"><span style="width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)"></span><b style="color:#a16207;font-size:13px">${bus.routeNo}</b>${bus.live?`<span style="color:#16a34a;font-size:9px;font-weight:700;background:#dcfce7;padding:1px 6px;border-radius:8px;margin-left:2px">● LIVE</span>`:""}</div><div style="font-size:11px;color:#64748b;margin-bottom:8px">${bus.routeName||""}</div><div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;border-top:1px solid rgba(0,0,0,.08);padding-top:7px"><div><div style="color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:.03em">At</div><div style="font-weight:600;color:#0f172a">${bus.currentStop||"-"}</div></div><div style="text-align:right"><div style="color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:.03em">Next</div><div style="font-weight:600;color:#0f172a">${bus.nextStop||"Terminus"}</div></div></div></div>`;
+const busPopup=bus=>`<div style="font-family:'DM Sans',sans-serif;min-width:180px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px"><span style="width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)"></span><b style="color:#a16207;font-size:13px">${bus.routeNo}</b>${bus.live?`<span style="color:#16a34a;font-size:9px;font-weight:700;background:#dcfce7;padding:1px 6px;border-radius:8px;margin-left:2px">● LIVE</span>`:""}</div><div style="font-size:11px;color:#64748b;margin-bottom:8px">${bus.routeName||""}</div>${bus.driverName?`<div style="font-size:11px;color:#334155;margin-bottom:6px">Driver: ${bus.driverName}</div>`:""}${bus.lastUpdated?`<div style="font-size:10px;color:#64748b;margin-bottom:6px">Updated: ${new Date(bus.lastUpdated).toLocaleTimeString()}</div>`:""}<div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;border-top:1px solid rgba(0,0,0,.08);padding-top:7px"><div><div style="color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:.03em">At</div><div style="font-weight:600;color:#0f172a">${bus.currentStop||"-"}</div></div><div style="text-align:right"><div style="color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:.03em">Next</div><div style="font-weight:600;color:#0f172a">${bus.nextStop||"Terminus"}</div></div></div></div>`;
 const stopPopup=(s,routeNo)=>`<div style="font-family:'DM Sans',sans-serif"><b style="color:#0f172a;font-size:12px">${s}</b><br/><small style="color:#94a3b8">${routeNo||""}</small></div>`;
 
-export default function BusMap({focusRoute}){
+export default function BusMap({focusRoute,liveOnly=false,driverNamesByRoute={},compact=false}){
   const mapRef=useRef(null),mapI=useRef(null),bmRef=useRef({}),rlRef=useRef([]),animRef=useRef({});
   const streetRef=useRef(null),satRef=useRef(null),labelsRef=useRef(null);
   const{busPositions,connected}=useSocket();
@@ -24,7 +24,7 @@ export default function BusMap({focusRoute}){
   useEffect(()=>{
     if(!L||mapI.current)return;
     mapI.current=L.map(mapRef.current,{center:CU,zoom:12,zoomControl:true});
-    streetRef.current=L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{attribution:"&copy; OpenStreetMap &copy; CARTO",maxZoom:19,subdomains:"abcd"});
+    streetRef.current=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:19});
     satRef.current=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{attribution:"&copy; Esri",maxZoom:19});
     labelsRef.current=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,pane:"shadowPane"});
     streetRef.current.addTo(mapI.current);
@@ -40,7 +40,7 @@ export default function BusMap({focusRoute}){
     else streetRef.current.addTo(mapI.current);
   },[style]);
 
-  useEffect(()=>{api.get("/routes?limit=116").then(r=>setRoutes(r.data.routes||[])).catch(()=>{});},[]);
+  useEffect(()=>{api.get("/routes?limit=500").then(r=>setRoutes(r.data.routes||[])).catch(()=>{});},[]);
   useEffect(()=>{if(focusRoute){setActive(focusRoute.routeNo);drawRoute(focusRoute);}},[focusRoute]);
 
   const drawRoute=useCallback(route=>{
@@ -68,31 +68,40 @@ export default function BusMap({focusRoute}){
 
   useEffect(()=>{
     if(!mapI.current)return;
-    busPositions.forEach(bus=>{
+    const visibleBuses=busPositions.filter(bus=>!liveOnly||bus.live);
+    if(liveOnly){
+      const visibleRoutes=new Set(visibleBuses.map(bus=>bus.routeNo));
+      Object.entries(bmRef.current).forEach(([routeNo,marker])=>{
+        if(!visibleRoutes.has(routeNo)){mapI.current.removeLayer(marker);delete bmRef.current[routeNo];}
+      });
+    }
+    visibleBuses.forEach(bus=>{
       if(!showAll&&bus.routeNo!==active)return;
+      if(!Number.isFinite(bus.lat)||!Number.isFinite(bus.lng))return;
       const ll=[bus.lat,bus.lng];
+      const displayBus={...bus,driverName:driverNamesByRoute[bus.routeNo]};
       const existing=bmRef.current[bus.routeNo];
       if(existing){
         const cur=existing.getLatLng();
         animateMarker(existing,[cur.lat,cur.lng],ll,bus.routeNo);
         existing.setIcon(busIcon(bus.color,bus.heading||0,bus.live));
-        existing.setPopupContent(busPopup(bus));
+        existing.setPopupContent(busPopup(displayBus));
       }else{
-        const m=L.marker(ll,{icon:busIcon(bus.color,bus.heading||0,bus.live)}).bindPopup(busPopup(bus)).addTo(mapI.current);
+        const m=L.marker(ll,{icon:busIcon(bus.color,bus.heading||0,bus.live)}).bindPopup(busPopup(displayBus)).addTo(mapI.current);
         m.on("click",()=>setActive(bus.routeNo));
         bmRef.current[bus.routeNo]=m;
       }
     });
     return()=>{Object.values(animRef.current).forEach(id=>cancelAnimationFrame(id));};
-  },[busPositions,showAll,active]);
+  },[busPositions,showAll,active,liveOnly,driverNamesByRoute]);
 
-  const filtered=routes.filter(r=>!filter||r.routeNo.toUpperCase().includes(filter.toUpperCase())||r.routeName.toUpperCase().includes(filter.toUpperCase()));
+  const filtered=routes.filter(r=>(!liveOnly||busPositions.some(bus=>bus.routeNo===r.routeNo&&bus.live))&&(!filter||r.routeNo.toUpperCase().includes(filter.toUpperCase())||r.routeName.toUpperCase().includes(filter.toUpperCase())));
   const recenter=()=>mapI.current?.flyTo(CU,13,{duration:0.9});
 
-  return(<div className="flex flex-col md:flex-row h-[calc(100vh-4rem)]">
+  return(<div className={`flex flex-col md:flex-row ${compact?"h-full":"h-[calc(100vh-4rem)]"}`}>
     <div className="w-full md:w-64 glass border-r border-black/8 flex flex-col order-2 md:order-1 h-44 md:h-auto flex-shrink-0">
       <div className="p-2.5 border-b border-black/8"><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filter routes..." className="field text-xs py-1.5"/></div>
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-black/8 text-xs text-slate-500"><span>{filtered.length} routes</span><label className="flex items-center gap-1.5 cursor-pointer"><span>All</span><div className="relative w-7 h-4"><input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)} className="sr-only peer"/><div className="w-7 h-4 bg-slate-200 rounded-full peer-checked:bg-yellow-400 transition-colors"/><div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full peer-checked:translate-x-3 transition-transform"/></div></label></div>
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-black/8 text-xs text-slate-500"><span>{filtered.length} {liveOnly?"live buses":"routes"}</span><label className="flex items-center gap-1.5 cursor-pointer"><span>All</span><div className="relative w-7 h-4"><input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)} className="sr-only peer"/><div className="w-7 h-4 bg-slate-200 rounded-full peer-checked:bg-yellow-400 transition-colors"/><div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full peer-checked:translate-x-3 transition-transform"/></div></label></div>
       <div className="flex-1 overflow-y-auto">{filtered.slice(0,60).map(r=>(<button key={r._id} onClick={()=>{setActive(r.routeNo);drawRoute(r);}} className={`w-full text-left px-3 py-2 border-b border-black/5 flex items-center gap-2 hover:bg-black/5 transition-colors ${active===r.routeNo?"bg-yellow-400/10 border-l-2 border-l-yellow-500":""}`}><span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:r.color||"#a16207"}}/><div className="min-w-0"><p className="font-mono text-xs text-slate-700 truncate">{r.routeNo}</p><p className="text-[10px] text-slate-500 truncate">{r.routeName}</p></div></button>))}</div>
       <div className="p-2.5 border-t border-black/8 flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full flex-shrink-0 ${connected?"bg-green-400 animate-pulse":"bg-red-400"}`}/><span className="text-xs text-slate-500">{connected?`${busPositions.length} live`:"Offline"}</span></div>
     </div>

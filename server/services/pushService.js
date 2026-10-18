@@ -23,3 +23,21 @@ exports.notifyRouteStatus=async(routeNo,{isWorking,reason})=>{
     }
   }));
 };
+
+exports.notifyBusNear=async(routeNo,stop,etaMinutes)=>{
+  if(!configured)return;
+  const subs=await PushSubscription.find({routeNo});
+  if(!subs.length)return;
+  const payload=JSON.stringify({
+    title:`Bus ${routeNo} is near ${stop}`,
+    body:typeof etaMinutes==="number"?`The bus is about ${etaMinutes} minutes away.`:"The bus is approaching your stop.",
+    routeNo,stop
+  });
+  await Promise.all(subs.map(async sub=>{
+    try{await webpush.sendNotification({endpoint:sub.endpoint,keys:sub.keys},payload);}
+    catch(error){
+      if(error.statusCode===404||error.statusCode===410)await PushSubscription.deleteOne({_id:sub._id});
+      else throw error;
+    }
+  }));
+};

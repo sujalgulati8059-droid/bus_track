@@ -18,11 +18,18 @@ exports.updateDaySchedule=async(req,res,next)=>{try{const day=req.params.day;if(
 exports.setTodayStatus=async(req,res,next)=>{try{const{isWorking,reason}=req.body;if(typeof isWorking!=="boolean")return res.status(400).json({success:false,error:"isWorking (boolean) required"});const status=await BusStatus.findOneAndUpdate({routeNo:req.driver.routeNo,date:todayStr()},{isWorking,reason:reason||"",driver:req.driver._id},{upsert:true,new:true,setDefaultsOnInsert:true});notifyRouteStatus(req.driver.routeNo,{isWorking,reason}).catch(()=>{});req.app.get("io")?.emit("driver-status-change",{routeNo:req.driver.routeNo,driverName:req.driver.name,isWorking,reason:reason||""});res.json({success:true,data:status});}catch(e){next(e);}};
 
 // POST /api/driver/location { lat, lng, heading? } - used by the mobile app's background GPS task
-exports.updateLocation=(req,res)=>{
+exports.updateLocation=async(req,res,next)=>{
   const{lat,lng,heading}=req.body||{};
-  if(typeof lat!=="number"||typeof lng!=="number"||Math.abs(lat)>90||Math.abs(lng)>180)return res.status(400).json({success:false,error:"lat and lng (numbers) required"});
+  if(typeof lat!=="number"||typeof lng!=="number"||!Number.isFinite(lat)||!Number.isFinite(lng)||Math.abs(lat)>90||Math.abs(lng)>180)
+    return res.status(400).json({success:false,error:"lat and lng (numbers) required"});
+  if(heading!==undefined&&(typeof heading!=="number"||!Number.isFinite(heading)||heading<0||heading>360))
+    return res.status(400).json({success:false,error:"heading must be a number from 0 to 360"});
   const api=req.app.get("tracking");
-  const ok=api?api.applyLocation(req.driver.routeNo,{lat,lng,heading}):false;
-  res.json({success:true,applied:ok});
+  if(!api)return res.status(503).json({success:false,error:"Tracking is not ready"});
+  try{
+    const applied=await api.applyLocation(req.driver.routeNo,req.driver._id,{lat,lng,heading});
+    if(!applied)return res.status(409).json({success:false,error:"Start an active trip before sharing location"});
+    res.json({success:true,applied:true});
+  }catch(error){next(error);}
 };
-exports.stopLocation=(req,res)=>{req.app.get("tracking")?.stopLive(req.driver.routeNo);res.json({success:true});};
+exports.stopLocation=(req,res)=>{req.app.get("tracking")?.stopLive(req.driver.routeNo,req.driver._id);res.json({success:true});};

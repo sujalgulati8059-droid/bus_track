@@ -13,7 +13,7 @@ exports.register=async(req,res,next)=>{
     if(!route)return res.status(400).json({success:false,error:"Selected route does not exist"});
     if(!route.stops.includes(assignedStop))
       return res.status(400).json({success:false,error:"Selected stop is not on that route"});
-    const user=await User.create({name,uid:uid.toUpperCase(),email:email.toLowerCase(),phone,password,role,assignedRoute:route.routeNo,assignedStop});
+    const user=await User.create({name,uid:uid.toUpperCase(),email:email.toLowerCase(),phone,password,role,assignedRoute:route.routeNo,assignedStop,assignedStops:[assignedStop]});
     sendUserTokenResponse(user,201,res);
   }catch(e){
     if(e.code===11000){const field=Object.keys(e.keyPattern||{})[0]||"field";return res.status(400).json({success:false,error:`That ${field} is already registered`});}
@@ -46,6 +46,7 @@ exports.updateProfile=async(req,res,next)=>{
       if(!route||!route.stops.includes(assignedStop))
         return res.status(400).json({success:false,error:"Stop is not on your assigned route"});
       updates.assignedStop=assignedStop;
+      updates.assignedStops=[assignedStop,...(req.user.assignedStops||[]).filter(stop=>stop!==assignedStop)];
     }
     const user=await User.findByIdAndUpdate(req.user._id,updates,{new:true,runValidators:true});
     res.json({success:true,data:{user}});
