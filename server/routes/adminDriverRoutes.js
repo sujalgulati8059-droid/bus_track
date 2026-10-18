@@ -1,7 +1,12 @@
-const express=require("express"),r=express.Router(),{listDrivers,createDriver,updateDriver,deleteDriver}=require("../controllers/adminDriverController"),{protect,restrictTo}=require("../middleware/authMiddleware");
+const express=require("express"),r=express.Router(),{listDrivers,createDriver,updateDriver,deleteDriver,listRequests,approveDriverRequest,rejectDriverRequest}=require("../controllers/adminDriverController"),{protect,restrictTo}=require("../middleware/authMiddleware");
 r.use(protect,restrictTo("admin","superadmin"));
 r.get("/",listDrivers);
+r.get("/requests",listRequests);
 r.post("/",createDriver);
+r.put("/:id/approve",approveDriverRequest);
+r.post("/:id/approve",approveDriverRequest);
+r.put("/:id/reject",rejectDriverRequest);
+r.post("/:id/reject",rejectDriverRequest);
 r.put("/:id",updateDriver);
 r.delete("/:id",deleteDriver);
 module.exports=r;

@@ -24,20 +24,52 @@ exports.notifyRouteStatus=async(routeNo,{isWorking,reason})=>{
   }));
 };
 
-exports.notifyBusNear=async(routeNo,stop,etaMinutes)=>{
-  if(!configured)return;
-  const subs=await PushSubscription.find({routeNo});
-  if(!subs.length)return;
-  const payload=JSON.stringify({
-    title:`Bus ${routeNo} is near ${stop}`,
-    body:typeof etaMinutes==="number"?`The bus is about ${etaMinutes} minutes away.`:"The bus is approaching your stop.",
-    routeNo,stop
+// Notifies users when a bus is near (~500m) their stop
+exports.notifyBusNear = async (routeNo, stop, distanceMeters) => {
+  if (!configured) return;
+  const subs = await PushSubscription.find({ routeNo });
+  if (!subs.length) return;
+  const payload = JSON.stringify({
+    title: `Bus ${routeNo} is arriving!`,
+    body: `Bus ${routeNo} is within ${distanceMeters}m of stop: ${stop}.`,
+    routeNo,
+    stop,
+    distanceMeters,
+    tag: `bus-near-${routeNo}-${stop}`,
   });
-  await Promise.all(subs.map(async sub=>{
-    try{await webpush.sendNotification({endpoint:sub.endpoint,keys:sub.keys},payload);}
-    catch(error){
-      if(error.statusCode===404||error.statusCode===410)await PushSubscription.deleteOne({_id:sub._id});
-      else throw error;
-    }
-  }));
+  await Promise.all(
+    subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload);
+      } catch (e) {
+        if (e.statusCode === 404 || e.statusCode === 410) {
+          await PushSubscription.deleteOne({ _id: sub._id });
+        }
+      }
+    })
+  );
+};
+
+// Notifies admin when a new driver signup request is submitted
+exports.notifyAdminNewDriverRequest = async (driverRequest) => {
+  if (!configured) return;
+  // If admin subscriptions exist or global subscriptions
+  const subs = await PushSubscription.find({ routeNo: "ADMIN" });
+  if (!subs.length) return;
+  const payload = JSON.stringify({
+    title: "New Driver Signup Request",
+    body: `${driverRequest.name} requested route ${driverRequest.requestedRoute} (${driverRequest.phone}).`,
+    data: { driverRequestId: driverRequest._id },
+  });
+  await Promise.all(
+    subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload);
+      } catch (e) {
+        if (e.statusCode === 404 || e.statusCode === 410) {
+          await PushSubscription.deleteOne({ _id: sub._id });
+        }
+      }
+    })
+  );
 };

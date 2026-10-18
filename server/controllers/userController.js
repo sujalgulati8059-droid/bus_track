@@ -1,6 +1,15 @@
-const User=require("../models/User"),Route=require("../models/Route"),DailyTravelStatus=require("../models/DailyTravelStatus"),{sendUserTokenResponse}=require("../services/authService");
+const jwt = require("jsonwebtoken");
+const User = require("../models/User"), Route = require("../models/Route"), DailyTravelStatus = require("../models/DailyTravelStatus"), StudentRecord = require("../models/StudentRecord"), { sendUserTokenResponse } = require("../services/authService");
+const { normalizePhone, generateAndSendOtp, verifyOtp } = require("../services/otpService");
 
-const today=()=>new Date().toISOString().slice(0,10); // YYYY-MM-DD
+const today = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+function getSignupToken(req) {
+  if (req.headers.authorization?.startsWith("Bearer ")) {
+    return req.headers.authorization.split(" ")[1];
+  }
+  return req.body?.signupToken || req.query?.signupToken || null;
+}
 
 exports.register=async(req,res,next)=>{
   try{
@@ -13,7 +22,7 @@ exports.register=async(req,res,next)=>{
     if(!route)return res.status(400).json({success:false,error:"Selected route does not exist"});
     if(!route.stops.includes(assignedStop))
       return res.status(400).json({success:false,error:"Selected stop is not on that route"});
-    const user=await User.create({name,uid:uid.toUpperCase(),email:email.toLowerCase(),phone,password,role,assignedRoute:route.routeNo,assignedStop,assignedStops:[assignedStop]});
+    const user=await User.create({name,uid:uid.toUpperCase(),email:email.toLowerCase(),phone,password,role,assignedRoute:route.routeNo,assignedStop});
     sendUserTokenResponse(user,201,res);
   }catch(e){
     if(e.code===11000){const field=Object.keys(e.keyPattern||{})[0]||"field";return res.status(400).json({success:false,error:`That ${field} is already registered`});}
@@ -46,7 +55,6 @@ exports.updateProfile=async(req,res,next)=>{
       if(!route||!route.stops.includes(assignedStop))
         return res.status(400).json({success:false,error:"Stop is not on your assigned route"});
       updates.assignedStop=assignedStop;
-      updates.assignedStops=[assignedStop,...(req.user.assignedStops||[]).filter(stop=>stop!==assignedStop)];
     }
     const user=await User.findByIdAndUpdate(req.user._id,updates,{new:true,runValidators:true});
     res.json({success:true,data:{user}});
@@ -94,4 +102,258 @@ exports.getRouteEstimate=async(req,res,next)=>{
     const total=rows.reduce((a,r)=>a+r.count,0);
     res.json({success:true,data:{routeNo,total,byStop}});
   }catch(e){next(e);}
+};
+
+// ==========================================
+// STUDENT OTP SIGNUP FLOW
+// ==========================================
+
+// Step A: POST /api/users/otp/send { phone }
+exports.sendSignupOtp = async (req, res, next) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, error: "Phone number is required" });
+    }
+    const normalized = normalizePhone(phone);
+    const existing = await User.findOne({ phone: normalized, isActive: true });
+    if (existing) {
+      return res.status(400).json({ success: false, error: "This phone number is already registered. Please log in." });
+    }
+    const result = await generateAndSendOtp({ phone: normalized, purpose: "student_signup" });
+    res.json({
+      success: true,
+      message: result.message,
+      ...(result.devOtp ? { devOtp: result.devOtp } : {}),
+    });
+  } catch (e) {
+    if (e.statusCode) {
+      return res.status(e.statusCode).json({ success: false, error: e.message });
+    }
+    res.status(400).json({ success: false, error: e.message });
+  }
+};
+
+// Step B: POST /api/users/otp/verify { phone, otp }
+exports.verifySignupOtp = async (req, res, next) => {
+  try {
+    const { phone, otp } = req.body;
+    if (!phone || !otp) {
+      return res.status(400).json({ success: false, error: "Phone and OTP are required" });
+    }
+    const normalized = normalizePhone(phone);
+    await verifyOtp({ phone: normalized, purpose: "student_signup", otp });
+    const signupToken = jwt.sign(
+      { phone: normalized, purpose: "student_signup", uidVerified: false },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+    res.json({
+      success: true,
+      message: "Phone verified successfully",
+      signupToken,
+    });
+  } catch (e) {
+    if (e.statusCode) {
+      return res.status(e.statusCode).json({ success: false, error: e.message });
+    }
+    res.status(400).json({ success: false, error: e.message });
+  }
+};
+
+// Step C: POST /api/users/uid/verify { uid } (requires signupToken)
+exports.verifyUid = async (req, res, next) => {
+  try {
+    const token = getSignupToken(req);
+    if (!token) {
+      return res.status(401).json({ success: false, error: "Signup token required" });
+    }
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ success: false, error: "Invalid or expired signup token" });
+    }
+    if (decoded.purpose !== "student_signup") {
+      return res.status(403).json({ success: false, error: "Invalid token purpose for student signup" });
+    }
+
+    const { uid } = req.body;
+    if (!uid || typeof uid !== "string") {
+      return res.status(400).json({ success: false, error: "UID is required" });
+    }
+    const uidClean = uid.trim().toUpperCase();
+
+    // Check UID against StudentRecord
+    const record = await StudentRecord.findOne({ uid: uidClean, isActive: true });
+    if (!record) {
+      return res.status(404).json({ success: false, error: "Student UID not found or not active in university records" });
+    }
+
+    // Reject if a User with that UID already exists
+    const existing = await User.findOne({ uid: uidClean });
+    if (existing) {
+      return res.status(400).json({ success: false, error: "A user with this UID is already registered" });
+    }
+
+    // Issue updated signup token with uidVerified: true and prefillName
+    const updatedSignupToken = jwt.sign(
+      {
+        phone: decoded.phone,
+        uid: uidClean,
+        prefillName: record.name,
+        purpose: "student_signup",
+        uidVerified: true,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    res.json({
+      success: true,
+      verified: true,
+      prefillName: record.name,
+      signupToken: updatedSignupToken,
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+// Step D: POST /api/users/signup/complete { name, assignedRoute, assignedStops:[...] } (requires uid-verified token)
+exports.completeSignup = async (req, res, next) => {
+  try {
+    const token = getSignupToken(req);
+    if (!token) {
+      return res.status(401).json({ success: false, error: "Signup token required" });
+    }
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ success: false, error: "Invalid or expired signup token" });
+    }
+    if (decoded.purpose !== "student_signup" || !decoded.uidVerified || !decoded.uid) {
+      return res.status(403).json({ success: false, error: "UID verification required before completing signup" });
+    }
+
+    // Phone and UID come strictly from the token, NEVER from request body
+    const phone = decoded.phone;
+    const uid = decoded.uid;
+
+    const { name, assignedRoute, assignedStops, assignedStop, role } = req.body;
+    const fullName = String(name || decoded.prefillName || "").trim();
+    if (!fullName) {
+      return res.status(400).json({ success: false, error: "Name is required" });
+    }
+
+    if (!assignedRoute) {
+      return res.status(400).json({ success: false, error: "Assigned route is required" });
+    }
+
+    const route = await Route.findOne({ routeNo: assignedRoute.toUpperCase(), isActive: true });
+    if (!route) {
+      return res.status(400).json({ success: false, error: "Selected route does not exist" });
+    }
+
+    // Support multiple stops: assignedStops array
+    let stops = [];
+    if (Array.isArray(assignedStops) && assignedStops.length > 0) {
+      stops = assignedStops.map(s => String(s).trim()).filter(Boolean);
+    } else if (assignedStop) {
+      stops = [String(assignedStop).trim()];
+    }
+
+    if (stops.length === 0) {
+      return res.status(400).json({ success: false, error: "At least one assigned stop is required" });
+    }
+
+    // Validate route and stops exist in Route
+    const invalidStops = stops.filter(s => !route.stops.includes(s));
+    if (invalidStops.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Selected stop(s) not on route ${route.routeNo}: ${invalidStops.join(", ")}`,
+      });
+    }
+
+    // Check if phone or uid already registered
+    const existing = await User.findOne({ $or: [{ phone }, { uid }] });
+    if (existing) {
+      return res.status(400).json({ success: false, error: "User with this phone or UID is already registered" });
+    }
+
+    const user = await User.create({
+      name: fullName,
+      uid,
+      phone,
+      role: role && ["student", "faculty"].includes(role) ? role : "student",
+      assignedRoute: route.routeNo,
+      assignedStop: stops[0],
+      assignedStops: stops,
+      isActive: true,
+    });
+
+    sendUserTokenResponse(user, 201, res);
+  } catch (e) {
+    if (e.code === 11000) {
+      const field = Object.keys(e.keyPattern || {})[0] || "field";
+      return res.status(400).json({ success: false, error: `That ${field} is already registered` });
+    }
+    next(e);
+  }
+};
+
+// ==========================================
+// RETURNING STUDENT PHONE OTP LOGIN
+// ==========================================
+
+// POST /api/users/login/otp/send { phone }
+exports.sendLoginOtp = async (req, res, next) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, error: "Phone number is required" });
+    }
+    const normalized = normalizePhone(phone);
+    const user = await User.findOne({ phone: normalized, isActive: true });
+    if (!user) {
+      return res.status(404).json({ success: false, error: "No student account found with this phone number. Please sign up." });
+    }
+    const result = await generateAndSendOtp({ phone: normalized, purpose: "student_login" });
+    res.json({
+      success: true,
+      message: result.message,
+      ...(result.devOtp ? { devOtp: result.devOtp } : {}),
+    });
+  } catch (e) {
+    if (e.statusCode) {
+      return res.status(e.statusCode).json({ success: false, error: e.message });
+    }
+    res.status(400).json({ success: false, error: e.message });
+  }
+};
+
+// POST /api/users/login/otp/verify { phone, otp }
+exports.verifyLoginOtp = async (req, res, next) => {
+  try {
+    const { phone, otp } = req.body;
+    if (!phone || !otp) {
+      return res.status(400).json({ success: false, error: "Phone and OTP are required" });
+    }
+    const normalized = normalizePhone(phone);
+    await verifyOtp({ phone: normalized, purpose: "student_login", otp });
+    const user = await User.findOne({ phone: normalized, isActive: true });
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User account not found" });
+    }
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+    sendUserTokenResponse(user, 200, res);
+  } catch (e) {
+    if (e.statusCode) {
+      return res.status(e.statusCode).json({ success: false, error: e.message });
+    }
+    res.status(400).json({ success: false, error: e.message });
+  }
 };

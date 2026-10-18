@@ -1,18 +1,58 @@
-const express=require("express"),r=express.Router(),{login,logout,getMe,getMyRoute,updateDaySchedule,setTodayStatus,getPassengerBreakdown,updateLocation,stopLocation}=require("../controllers/driverController"),{protectDriver}=require("../middleware/authMiddleware"),signup=require("../controllers/driverSignupController"),trip=require("../controllers/tripController"),otpLimit=require("../middleware/otpRateLimit");
-r.post("/login",login);
-r.post("/login/otp/send",otpLimit,signup.sendLoginOtp);
-r.post("/login/otp/verify",otpLimit,signup.verifyLoginOtp);
-r.post("/signup/otp/send",otpLimit,signup.sendSignupOtp);
-r.post("/signup/request",otpLimit,signup.submitRequest);
-r.get("/signup/status",otpLimit,signup.getRequestStatus);
-r.post("/trip/start",protectDriver,trip.start);
-r.post("/trip/stop",protectDriver,trip.stop);
-r.post("/logout",protectDriver,logout);
-r.get("/me",protectDriver,getMe);
-r.get("/route",protectDriver,getMyRoute);
-r.put("/route/schedule/:day",protectDriver,updateDaySchedule);
-r.put("/status",protectDriver,setTodayStatus);
-r.get("/passengers",protectDriver,getPassengerBreakdown);
-r.post("/location",protectDriver,updateLocation);
-r.post("/location/stop",protectDriver,stopLocation);
-module.exports=r;
+const express = require("express");
+const r = express.Router();
+const {
+  login,
+  logout,
+  getMe,
+  getMyRoute,
+  updateDaySchedule,
+  setTodayStatus,
+  getPassengerBreakdown,
+  updateLocation,
+  stopLocation,
+  register,
+  startTrip,
+  stopTrip,
+  sendDriverSignupOtp,
+  submitDriverSignupRequest,
+  getDriverSignupStatus,
+  sendDriverLoginOtp,
+  verifyDriverLoginOtp,
+} = require("../controllers/driverController");
+const { protectDriver } = require("../middleware/authMiddleware");
+const { otpIpLimiter, otpPhoneLimiter } = require("../services/otpService");
+
+const regLimit = require("express-rate-limit")({
+  windowMs: 60 * 60 * 1000,
+  max: 15,
+  message: { success: false, error: "Too many requests. Try again later." },
+});
+
+// Driver Signup & Approval Flow (Phone OTP)
+r.post("/signup/otp/send", otpIpLimiter, otpPhoneLimiter, sendDriverSignupOtp);
+r.post("/signup/request", otpIpLimiter, otpPhoneLimiter, submitDriverSignupRequest);
+r.get("/signup/status", otpIpLimiter, getDriverSignupStatus);
+
+// Driver Login (Phone OTP, no password)
+r.post("/login/otp/send", otpIpLimiter, otpPhoneLimiter, sendDriverLoginOtp);
+r.post("/login/otp/verify", otpIpLimiter, otpPhoneLimiter, verifyDriverLoginOtp);
+
+// Trip Management (Sets BusStatus / live flag, stores startedAt)
+r.post("/trip/start", protectDriver, startTrip);
+r.post("/trip/stop", protectDriver, stopTrip);
+
+// Location Updates (Route-locked to driver's routeNo, accepted only while trip is active)
+r.post("/location", protectDriver, updateLocation);
+r.post("/location/stop", protectDriver, stopLocation);
+
+// Existing Legacy Driver Endpoints
+r.post("/register", regLimit, register);
+r.post("/login", login);
+r.post("/logout", protectDriver, logout);
+r.get("/me", protectDriver, getMe);
+r.get("/route", protectDriver, getMyRoute);
+r.put("/route/schedule/:day", protectDriver, updateDaySchedule);
+r.put("/status", protectDriver, setTodayStatus);
+r.get("/passengers", protectDriver, getPassengerBreakdown);
+
+module.exports = r;
