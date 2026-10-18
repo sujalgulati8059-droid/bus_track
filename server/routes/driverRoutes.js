@@ -20,6 +20,7 @@ const {
   sendDriverLoginOtp,
   verifyDriverLoginOtp,
   setupPassword,
+  googleAuth,
 } = require("../controllers/driverController");
 const { protectDriver } = require("../middleware/authMiddleware");
 const { otpIpLimiter, otpPhoneLimiter } = require("../services/otpService");
@@ -52,6 +53,7 @@ r.post("/location/stop", protectDriver, stopLocation);
 // Existing Legacy Driver Endpoints
 r.post("/register", regLimit, register);
 r.post("/login", login);
+r.post("/auth/google", googleAuth);
 r.post("/logout", protectDriver, logout);
 r.get("/me", protectDriver, getMe);
 r.get("/route", protectDriver, getMyRoute);

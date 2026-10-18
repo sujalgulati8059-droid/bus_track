@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const Driver = require("../models/Driver"), User = require("../models/User"), Route = require("../models/Route"), BusStatus = require("../models/BusStatus"), DailyTravelStatus = require("../models/DailyTravelStatus"), DriverRequest = require("../models/DriverRequest"), { sendDriverTokenResponse } = require("../services/authService"), { notifyRouteStatus, notifyAdminNewDriverRequest } = require("../services/pushService");
 const { normalizePhone, generateAndSendOtp, verifyOtp } = require("../services/otpService");
+const admin = require("../config/firebase");
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const todayDay=()=>DAYS[new Date().getDay()];
@@ -83,6 +84,30 @@ exports.updateLocation = (req, res) => {
 exports.stopLocation = (req, res) => {
   req.app.get("tracking")?.stopLive(req.driver.routeNo);
   res.json({ success: true });
+};
+
+// POST /api/driver/auth/google { idToken }
+exports.googleAuth = async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ success: false, error: "idToken required" });
+
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    const email = decoded.email?.toLowerCase();
+    if (!email) return res.status(400).json({ success: false, error: "Google account has no email" });
+
+    const driver = await Driver.findOne({ email, isActive: true, status: "approved" });
+    if (!driver) {
+      return res.status(403).json({ success: false, error: "No approved driver account found for this Google account. Contact the transport office." });
+    }
+
+    driver.lastLogin = new Date();
+    await driver.save({ validateBeforeSave: false });
+    sendDriverTokenResponse(driver, 200, res);
+  } catch (e) {
+    if (e.code?.startsWith("auth/")) return res.status(401).json({ success: false, error: "Invalid or expired Google token" });
+    next(e);
+  }
 };
 
 // ==========================================
