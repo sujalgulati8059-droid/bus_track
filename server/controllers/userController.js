@@ -144,7 +144,7 @@ exports.verifySignupOtp = async (req, res, next) => {
     const normalized = normalizePhone(phone);
     await verifyOtp({ phone: normalized, purpose: "student_signup", otp });
     const signupToken = jwt.sign(
-      { phone: normalized, purpose: "student_signup", uidVerified: false },
+      { phone: normalized, purpose: "student_signup" },
       process.env.JWT_SECRET,
       { expiresIn: "15m" }
     );
@@ -159,6 +159,11 @@ exports.verifySignupOtp = async (req, res, next) => {
     }
     res.status(400).json({ success: false, error: e.message });
   }
+};
+
+// Kept for backward compat but no longer required
+exports.verifyUid = async (req, res) => {
+  res.json({ success: true, verified: true, prefillName: '', signupToken: req.body.signupToken || '' });
 };
 
 // Step C: POST /api/users/uid/verify { uid } (requires signupToken)
@@ -220,7 +225,6 @@ exports.verifyUid = async (req, res, next) => {
   }
 };
 
-// Step D: POST /api/users/signup/complete { name, assignedRoute, assignedStops:[...] } (requires uid-verified token)
 exports.completeSignup = async (req, res, next) => {
   try {
     const token = getSignupToken(req);
@@ -233,59 +237,35 @@ exports.completeSignup = async (req, res, next) => {
     } catch (err) {
       return res.status(401).json({ success: false, error: "Invalid or expired signup token" });
     }
-    if (decoded.purpose !== "student_signup" || !decoded.uidVerified || !decoded.uid) {
-      return res.status(403).json({ success: false, error: "UID verification required before completing signup" });
+    if (decoded.purpose !== "student_signup") {
+      return res.status(403).json({ success: false, error: "Invalid token purpose" });
     }
 
-    // Phone and UID come strictly from the token, NEVER from request body
     const phone = decoded.phone;
-    const uid = decoded.uid;
-
     const { name, assignedRoute, assignedStops, assignedStop, role } = req.body;
-    const fullName = String(name || decoded.prefillName || "").trim();
-    if (!fullName) {
-      return res.status(400).json({ success: false, error: "Name is required" });
-    }
-
-    if (!assignedRoute) {
-      return res.status(400).json({ success: false, error: "Assigned route is required" });
-    }
+    const fullName = String(name || "").trim();
+    if (!fullName) return res.status(400).json({ success: false, error: "Name is required" });
+    if (!assignedRoute) return res.status(400).json({ success: false, error: "Assigned route is required" });
 
     const route = await Route.findOne({ routeNo: assignedRoute.toUpperCase(), isActive: true });
-    if (!route) {
-      return res.status(400).json({ success: false, error: "Selected route does not exist" });
-    }
+    if (!route) return res.status(400).json({ success: false, error: "Selected route does not exist" });
 
-    // Support multiple stops: assignedStops array
     let stops = [];
     if (Array.isArray(assignedStops) && assignedStops.length > 0) {
       stops = assignedStops.map(s => String(s).trim()).filter(Boolean);
     } else if (assignedStop) {
       stops = [String(assignedStop).trim()];
     }
+    if (stops.length === 0) return res.status(400).json({ success: false, error: "At least one stop is required" });
 
-    if (stops.length === 0) {
-      return res.status(400).json({ success: false, error: "At least one assigned stop is required" });
-    }
-
-    // Validate route and stops exist in Route
     const invalidStops = stops.filter(s => !route.stops.includes(s));
-    if (invalidStops.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Selected stop(s) not on route ${route.routeNo}: ${invalidStops.join(", ")}`,
-      });
-    }
+    if (invalidStops.length > 0) return res.status(400).json({ success: false, error: `Stop(s) not on route: ${invalidStops.join(", ")}` });
 
-    // Check if phone or uid already registered
-    const existing = await User.findOne({ $or: [{ phone }, { uid }] });
-    if (existing) {
-      return res.status(400).json({ success: false, error: "User with this phone or UID is already registered" });
-    }
+    const existing = await User.findOne({ phone });
+    if (existing) return res.status(400).json({ success: false, error: "User with this phone is already registered" });
 
     const user = await User.create({
       name: fullName,
-      uid,
       phone,
       role: role && ["student", "faculty"].includes(role) ? role : "student",
       assignedRoute: route.routeNo,
