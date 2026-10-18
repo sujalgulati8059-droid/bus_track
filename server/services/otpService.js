@@ -141,8 +141,8 @@ async function generateAndSendOtp({ phone: rawPhone, purpose }) {
     createdAt: { $gte: oneHourAgo },
   });
 
-  if (hourlyCount >= 5) {
-    const error = new Error("Maximum of 5 OTP requests per hour reached for this phone number. Please try again later.");
+  if (hourlyCount >= 10) {
+    const error = new Error("Too many OTP requests for this phone number. Please try again in an hour.");
     error.statusCode = 429;
     throw error;
   }
