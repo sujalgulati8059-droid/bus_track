@@ -1,1 +1,36 @@
-require("dotenv").config();const mongoose=require("mongoose");const StudentRecord=require("../models/StudentRecord");const uid=(process.argv[2]||"TEST001").trim().toUpperCase();const name=(process.argv[3]||"Test Student").trim();if(!/^[A-Z0-9-]{3,40}$/.test(uid)||!name||name.length>100){console.error("Provide a 3-40 character UID and a name of 1-100 characters");process.exit(1);}mongoose.connect(process.env.MONGO_URI).then(()=>StudentRecord.findOneAndUpdate({uid},{uid,name,isActive:true},{upsert:true,new:true,setDefaultsOnInsert:true})).then(async record=>{console.log(`Seeded student ${record.uid}`);await mongoose.disconnect();}).catch(async error=>{console.error("Student seed failed:",error.message);await mongoose.disconnect();process.exitCode=1;});
+require("dotenv").config();
+const mongoose = require("mongoose"), StudentRecord = require("../models/StudentRecord");
+
+const testStudents = [
+  { uid: "21BCS1001", name: "Aarav Sharma" },
+  { uid: "21BCS1002", name: "Diya Patel" },
+  { uid: "21BCS1003", name: "Rohan Verma" },
+  { uid: "21BCS1004", name: "Ananya Singh" },
+  { uid: "21BCS1005", name: "Vikram Malhotra" },
+  { uid: "21BCS1006", name: "Pooja Gupta" },
+  { uid: "21BCS1007", name: "Kabir Mehta" },
+  { uid: "21BCS1008", name: "Sneha Reddy" },
+  { uid: "21BCS1009", name: "Arjun Nair" },
+  { uid: "21BCS1010", name: "Kritika Joshi" },
+];
+
+async function seedStudents() {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    const ops = testStudents.map((s) => ({
+      updateOne: {
+        filter: { uid: s.uid },
+        update: { $set: { uid: s.uid, name: s.name, isActive: true } },
+        upsert: true,
+      },
+    }));
+    await StudentRecord.bulkWrite(ops);
+    console.log(`✅ Seeded ${testStudents.length} student records into StudentRecord`);
+    process.exit(0);
+  } catch (e) {
+    console.error("❌ Seed students failed:", e.message);
+    process.exit(1);
+  }
+}
+
+seedStudents();

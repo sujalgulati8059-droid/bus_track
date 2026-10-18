@@ -1,3 +1,0 @@
-✅ MongoDB: ac-ow3sckd-shard-00-02.ukd9vbw.mongodb.net
-Tracking 132 buses (simulation disabled)
-Server on http://localhost:5000

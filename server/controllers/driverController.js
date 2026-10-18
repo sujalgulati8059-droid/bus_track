@@ -6,7 +6,52 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const todayDay=()=>DAYS[new Date().getDay()];
 
-exports.login=async(req,res,next)=>{try{const{phone,password}=req.body;if(!phone||!password)return res.status(400).json({success:false,error:"Phone number and password required"});const normalized=normalizePhone(phone);const driver=await Driver.findOne({phone:{$in:[normalized,String(phone).trim()]}}).select("+password");if(!driver||!(await driver.comparePassword(password)))return res.status(401).json({success:false,error:"Invalid phone number or password"});if(driver.status==="pending")return res.status(403).json({success:false,error:"Your request is waiting for admin approval. Please try again later."});if(driver.status==="rejected")return res.status(403).json({success:false,error:"Your request was rejected"+(driver.rejectReason?": "+driver.rejectReason:".")+" Contact the transport office."});if(!driver.isActive)return res.status(403).json({success:false,error:"Your account is deactivated. Contact the transport office."});driver.lastLogin=new Date();await driver.save({validateBeforeSave:false});sendDriverTokenResponse(driver,200,res);}catch(e){next(e);}};
+exports.login = async (req, res, next) => {
+  try {
+    const { email, phone, password } = req.body;
+    const identifier = String(email || phone || "").trim();
+    if (!identifier || !password) {
+      return res.status(400).json({ success: false, error: "Email, Route ID, or phone number and password required" });
+    }
+
+    const normalizedIdentifier = identifier.toLowerCase();
+    const queryConditions = [
+      { email: normalizedIdentifier },
+      { routeNo: identifier.toUpperCase() },
+      { routeNo: normalizedIdentifier.replace(/^driver\./i, "").replace(/@.*$/, "").toUpperCase() },
+      { phone: identifier }
+    ];
+
+    try {
+      const normalizedPhone = normalizePhone(identifier);
+      queryConditions.push({ phone: normalizedPhone });
+    } catch {}
+
+    const driver = await Driver.findOne({ $or: queryConditions }).select("+password");
+
+    if (!driver || !(await driver.comparePassword(password))) {
+      return res.status(401).json({ success: false, error: "Invalid login credentials" });
+    }
+
+    if (driver.status === "pending") {
+      return res.status(403).json({ success: false, error: "Your request is waiting for admin approval. Please try again later." });
+    }
+
+    if (driver.status === "rejected") {
+      return res.status(403).json({ success: false, error: "Your account was rejected" + (driver.rejectReason ? ": " + driver.rejectReason : ".") + " Contact the transport office." });
+    }
+
+    if (!driver.isActive) {
+      return res.status(403).json({ success: false, error: "Your account is deactivated. Contact the transport office." });
+    }
+
+    driver.lastLogin = new Date();
+    await driver.save({ validateBeforeSave: false });
+    sendDriverTokenResponse(driver, 200, res);
+  } catch (e) {
+    next(e);
+  }
+};
 
 exports.register=async(req,res,next)=>{try{
   const name=String(req.body.name||"").trim(),phone=String(req.body.phone||"").trim(),password=String(req.body.password||""),routeNo=String(req.body.routeNo||"").trim(),vehicleNo=String(req.body.vehicleNo||"").trim();
