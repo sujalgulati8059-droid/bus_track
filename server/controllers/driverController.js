@@ -1,10 +1,11 @@
+const jwt = require("jsonwebtoken");
 const Driver = require("../models/Driver"), User = require("../models/User"), Route = require("../models/Route"), BusStatus = require("../models/BusStatus"), DailyTravelStatus = require("../models/DailyTravelStatus"), DriverRequest = require("../models/DriverRequest"), { sendDriverTokenResponse } = require("../services/authService"), { notifyRouteStatus, notifyAdminNewDriverRequest } = require("../services/pushService");
 const { normalizePhone, generateAndSendOtp, verifyOtp } = require("../services/otpService");
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const todayDay=()=>DAYS[new Date().getDay()];
 
-exports.login=async(req,res,next)=>{try{const{phone,password}=req.body;if(!phone||!password)return res.status(400).json({success:false,error:"Phone and password required"});const driver=await Driver.findOne({phone}).select("+password");if(!driver||!(await driver.comparePassword(password)))return res.status(401).json({success:false,error:"Invalid phone or password"});if(driver.status==="pending")return res.status(403).json({success:false,error:"Your request is waiting for admin approval. Please try again later."});if(driver.status==="rejected")return res.status(403).json({success:false,error:"Your request was rejected"+(driver.rejectReason?": "+driver.rejectReason:".")+" Contact the transport office."});if(!driver.isActive)return res.status(403).json({success:false,error:"Your account is deactivated. Contact the transport office."});driver.lastLogin=new Date();await driver.save({validateBeforeSave:false});sendDriverTokenResponse(driver,200,res);}catch(e){next(e);}};
+exports.login=async(req,res,next)=>{try{const{phone,password}=req.body;if(!phone||!password)return res.status(400).json({success:false,error:"Phone number and password required"});const normalized=normalizePhone(phone);const driver=await Driver.findOne({phone:{$in:[normalized,String(phone).trim()]}}).select("+password");if(!driver||!(await driver.comparePassword(password)))return res.status(401).json({success:false,error:"Invalid phone number or password"});if(driver.status==="pending")return res.status(403).json({success:false,error:"Your request is waiting for admin approval. Please try again later."});if(driver.status==="rejected")return res.status(403).json({success:false,error:"Your request was rejected"+(driver.rejectReason?": "+driver.rejectReason:".")+" Contact the transport office."});if(!driver.isActive)return res.status(403).json({success:false,error:"Your account is deactivated. Contact the transport office."});driver.lastLogin=new Date();await driver.save({validateBeforeSave:false});sendDriverTokenResponse(driver,200,res);}catch(e){next(e);}};
 
 exports.register=async(req,res,next)=>{try{
   const name=String(req.body.name||"").trim(),phone=String(req.body.phone||"").trim(),password=String(req.body.password||""),routeNo=String(req.body.routeNo||"").trim(),vehicleNo=String(req.body.vehicleNo||"").trim();
@@ -95,7 +96,11 @@ exports.sendDriverSignupOtp = async (req, res, next) => {
     if (!phone) return res.status(400).json({ success: false, error: "Phone number is required" });
     const normalized = normalizePhone(phone);
 
-    const existingDriver = await Driver.findOne({ phone: normalized, isActive: true, status: "approved" });
+    const existingDriver = await Driver.findOne({
+      phone: { $in: [normalized, String(phone).trim()] },
+      isActive: true,
+      status: "approved",
+    });
     if (existingDriver) {
       return res.status(400).json({ success: false, error: "This phone number is already registered as an active driver. Please log in." });
     }
@@ -117,8 +122,7 @@ exports.sendDriverSignupOtp = async (req, res, next) => {
   }
 };
 
-// POST /api/driver/signup/request { name, phone, otp, requestedRoute }
-exports.submitDriverSignupRequest = async (req, res, next) => {
+exports.verifyDriverSignupOtp = async (req, res, next) => {
   try {
     const { name, phone, otp, requestedRoute } = req.body;
     if (!name || !phone || !otp || !requestedRoute) {
@@ -131,12 +135,13 @@ exports.submitDriverSignupRequest = async (req, res, next) => {
     const normalized = normalizePhone(phone);
     const routeNoClean = String(requestedRoute).trim().toUpperCase();
     const route = await Route.findOne({ routeNo: routeNoClean, isActive: true });
-    if (!route) {
-      return res.status(400).json({ success: false, error: "That route does not exist" });
-    }
+    if (!route) return res.status(400).json({ success: false, error: "That route does not exist" });
 
-    // Block if phone already an active Driver or has a pending request
-    const existingDriver = await Driver.findOne({ phone: normalized, isActive: true, status: "approved" });
+    const existingDriver = await Driver.findOne({
+      phone: { $in: [normalized, String(phone).trim()] },
+      isActive: true,
+      status: "approved",
+    });
     if (existingDriver) {
       return res.status(400).json({ success: false, error: "This phone number is already registered as an active driver. Please log in." });
     }
@@ -145,13 +150,81 @@ exports.submitDriverSignupRequest = async (req, res, next) => {
       return res.status(400).json({ success: false, error: "A request with this phone number is already waiting for approval." });
     }
 
-    // Verify OTP
     await verifyOtp({ phone: normalized, purpose: "driver_signup", otp });
+    const signupToken = jwt.sign(
+      { phone: normalized, name: trimmedName, requestedRoute: route.routeNo, purpose: "driver_signup" },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+    res.json({ success: true, signupToken });
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ success: false, error: e.message });
+    res.status(400).json({ success: false, error: e.message });
+  }
+};
+
+// POST /api/driver/signup/request { name, phone, otp, requestedRoute }
+exports.submitDriverSignupRequest = async (req, res, next) => {
+  try {
+    const { signupToken, password } = req.body;
+    if (typeof password !== "string") {
+      return res.status(400).json({ success: false, error: "Password is required" });
+    }
+    if (password.length < 6) return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
+    let signup;
+    if (signupToken) {
+      try {
+        signup = jwt.verify(signupToken, process.env.JWT_SECRET);
+      } catch (err) {
+        return res.status(401).json({ success: false, error: "Invalid or expired driver signup token" });
+      }
+      if (signup.purpose !== "driver_signup" || !signup.phone || !signup.name || !signup.requestedRoute) {
+        return res.status(403).json({ success: false, error: "Invalid token purpose for driver signup" });
+      }
+    } else {
+      const { name, phone, otp, requestedRoute } = req.body;
+      if (!name || !phone || !otp || !requestedRoute) {
+        return res.status(400).json({ success: false, error: "name, phone, otp, and requestedRoute are required" });
+      }
+      signup = {
+        name: String(name).trim(),
+        phone: normalizePhone(phone),
+        requestedRoute: String(requestedRoute).trim().toUpperCase(),
+      };
+      signup.otp = otp;
+    }
+    const trimmedName = String(signup.name).trim();
+    if (trimmedName.length < 2) {
+      return res.status(400).json({ success: false, error: "Enter a valid full name (at least 2 characters)" });
+    }
+    const normalized = normalizePhone(signup.phone);
+    const routeNoClean = String(signup.requestedRoute).trim().toUpperCase();
+    const route = await Route.findOne({ routeNo: routeNoClean, isActive: true });
+    if (!route) {
+      return res.status(400).json({ success: false, error: "That route does not exist" });
+    }
+
+    // Block if phone already an active Driver or has a pending request
+    const existingDriver = await Driver.findOne({
+      phone: { $in: [normalized, String(phone).trim()] },
+      isActive: true,
+      status: "approved",
+    });
+    if (existingDriver) {
+      return res.status(400).json({ success: false, error: "This phone number is already registered as an active driver. Please log in." });
+    }
+    const pending = await DriverRequest.findOne({ phone: normalized, status: "pending" });
+    if (pending) {
+      return res.status(400).json({ success: false, error: "A request with this phone number is already waiting for approval." });
+    }
+
+    if (!signupToken) await verifyOtp({ phone: normalized, purpose: "driver_signup", otp: signup.otp });
 
     const driverReq = await DriverRequest.create({
       name: trimmedName,
       phone: normalized,
       requestedRoute: route.routeNo,
+      password,
       status: "pending",
       phoneVerified: true,
     });
@@ -174,7 +247,11 @@ exports.getDriverSignupStatus = async (req, res, next) => {
     const normalized = normalizePhone(rawPhone);
     const request = await DriverRequest.findOne({ phone: normalized }).sort({ createdAt: -1 });
     if (!request) {
-      const driver = await Driver.findOne({ phone: normalized, isActive: true, status: "approved" });
+      const driver = await Driver.findOne({
+        phone: { $in: [normalized, String(phone).trim()] },
+        isActive: true,
+        status: "approved",
+      });
       if (driver) return res.json({ success: true, status: "approved" });
       return res.status(404).json({ success: false, error: "No driver request found for this phone number" });
     }
@@ -190,7 +267,7 @@ exports.getDriverSignupStatus = async (req, res, next) => {
 };
 
 // ==========================================
-// DRIVER LOGIN (PHONE OTP, NO PASSWORD)
+// DRIVER OTP LOGIN AND PASSWORD SETUP
 // ==========================================
 
 // POST /api/driver/login/otp/send { phone }
@@ -201,7 +278,11 @@ exports.sendDriverLoginOtp = async (req, res, next) => {
     if (!phone) return res.status(400).json({ success: false, error: "Phone number is required" });
     const normalized = normalizePhone(phone);
 
-    const driver = await Driver.findOne({ phone: normalized, isActive: true, status: "approved" });
+    const driver = await Driver.findOne({
+      phone: { $in: [normalized, String(phone).trim()] },
+      isActive: true,
+      status: "approved",
+    }).select("+password");
     if (!driver) {
       return res.status(400).json({ success: false, error: "Not approved yet / no account" });
     }
@@ -227,9 +308,22 @@ exports.verifyDriverLoginOtp = async (req, res, next) => {
 
     await verifyOtp({ phone: normalized, purpose: "driver_login", otp });
 
-    const driver = await Driver.findOne({ phone: normalized, isActive: true, status: "approved" });
+    const driver = await Driver.findOne({
+      phone: { $in: [normalized, String(phone).trim()] },
+      isActive: true,
+      status: "approved",
+    }).select("+password");
     if (!driver) {
       return res.status(400).json({ success: false, error: "Not approved yet / no account" });
+    }
+
+    if (!driver.password) {
+      const passwordSetupToken = jwt.sign(
+        { id: driver._id, role: "driver", purpose: "driver_password_setup" },
+        process.env.JWT_SECRET,
+        { expiresIn: "15m" }
+      );
+      return res.json({ success: true, requiresPasswordSetup: true, passwordSetupToken });
     }
 
     driver.lastLogin = new Date();
@@ -238,5 +332,36 @@ exports.verifyDriverLoginOtp = async (req, res, next) => {
   } catch (e) {
     if (e.statusCode) return res.status(e.statusCode).json({ success: false, error: e.message });
     res.status(400).json({ success: false, error: e.message });
+  }
+};
+
+exports.setupPassword = async (req, res, next) => {
+  try {
+    const { password } = req.body;
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
+    }
+    let decoded;
+    try {
+      decoded = jwt.verify(req.body?.setupToken, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ success: false, error: "Invalid or expired password setup token" });
+    }
+    if (decoded.purpose !== "driver_password_setup" || decoded.role !== "driver" || !decoded.id) {
+      return res.status(403).json({ success: false, error: "Invalid token purpose for password setup" });
+    }
+    const driver = await Driver.findById(decoded.id).select("+password");
+    if (!driver || !driver.isActive || driver.status !== "approved") {
+      return res.status(404).json({ success: false, error: "Approved driver account not found" });
+    }
+    if (driver.password) {
+      return res.status(409).json({ success: false, error: "A password is already set for this account" });
+    }
+    driver.password = password;
+    driver.lastLogin = new Date();
+    await driver.save();
+    sendDriverTokenResponse(driver, 200, res);
+  } catch (e) {
+    next(e);
   }
 };

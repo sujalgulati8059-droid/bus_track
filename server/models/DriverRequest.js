@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require("mongoose"), bcrypt = require("bcryptjs");
 
 const driverRequestSchema = new mongoose.Schema(
   {
@@ -11,6 +11,11 @@ const driverRequestSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+    },
+    password: {
+      type: String,
+      select: false,
+      minlength: 6,
     },
     requestedRoute: {
       type: String,
@@ -42,6 +47,12 @@ const driverRequestSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+driverRequestSchema.pre("save", async function (next) {
+  if (!this.password || !this.isModified("password")) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
 
 // Unique phone while status is "pending"
 driverRequestSchema.index(

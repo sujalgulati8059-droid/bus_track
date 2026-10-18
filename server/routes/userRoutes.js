@@ -15,6 +15,7 @@ const {
   completeSignup,
   sendLoginOtp,
   verifyLoginOtp,
+  setupPassword,
 } = require("../controllers/userController");
 const { protectUser } = require("../middleware/authMiddleware");
 const { otpIpLimiter, otpPhoneLimiter } = require("../services/otpService");
@@ -28,6 +29,7 @@ r.post("/signup/complete", otpIpLimiter, completeSignup);
 // Returning Student Phone OTP Login
 r.post("/login/otp/send", otpIpLimiter, otpPhoneLimiter, sendLoginOtp);
 r.post("/login/otp/verify", otpIpLimiter, otpPhoneLimiter, verifyLoginOtp);
+r.post("/password/setup", otpIpLimiter, setupPassword);
 
 // Existing Legacy Routes (Email & Password)
 r.post("/register", register);

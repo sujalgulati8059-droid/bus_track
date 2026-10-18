@@ -14,10 +14,12 @@ const {
   startTrip,
   stopTrip,
   sendDriverSignupOtp,
+  verifyDriverSignupOtp,
   submitDriverSignupRequest,
   getDriverSignupStatus,
   sendDriverLoginOtp,
   verifyDriverLoginOtp,
+  setupPassword,
 } = require("../controllers/driverController");
 const { protectDriver } = require("../middleware/authMiddleware");
 const { otpIpLimiter, otpPhoneLimiter } = require("../services/otpService");
@@ -30,12 +32,14 @@ const regLimit = require("express-rate-limit")({
 
 // Driver Signup & Approval Flow (Phone OTP)
 r.post("/signup/otp/send", otpIpLimiter, otpPhoneLimiter, sendDriverSignupOtp);
+r.post("/signup/otp/verify", otpIpLimiter, otpPhoneLimiter, verifyDriverSignupOtp);
 r.post("/signup/request", otpIpLimiter, otpPhoneLimiter, submitDriverSignupRequest);
 r.get("/signup/status", otpIpLimiter, getDriverSignupStatus);
 
 // Driver Login (Phone OTP, no password)
 r.post("/login/otp/send", otpIpLimiter, otpPhoneLimiter, sendDriverLoginOtp);
 r.post("/login/otp/verify", otpIpLimiter, otpPhoneLimiter, verifyDriverLoginOtp);
+r.post("/password/setup", otpIpLimiter, setupPassword);
 
 // Trip Management (Sets BusStatus / live flag, stores startedAt)
 r.post("/trip/start", protectDriver, startTrip);

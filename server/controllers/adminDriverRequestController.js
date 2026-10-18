@@ -28,7 +28,7 @@ exports.listDriverRequests = async (req, res, next) => {
 // Body: { routeNo? } (Admin may override the requested route)
 exports.approveDriverRequest = async (req, res, next) => {
   try {
-    const request = await DriverRequest.findById(req.params.id);
+    const request = await DriverRequest.findById(req.params.id).select("+password");
     if (!request) {
       return res.status(404).json({ success: false, error: "Driver request not found" });
     }
@@ -62,6 +62,10 @@ exports.approveDriverRequest = async (req, res, next) => {
         status: "approved",
         reviewedAt: new Date(),
       });
+    }
+    if (request.password) {
+      await Driver.updateOne({ _id: driver._id }, { $set: { password: request.password } });
+      request.password = undefined;
     }
 
     request.status = "approved";

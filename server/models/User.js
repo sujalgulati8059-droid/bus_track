@@ -2,7 +2,7 @@ const mongoose = require("mongoose"), bcrypt = require("bcryptjs");
 const s = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    uid: { type: String, unique: true, sparse: true, trim: true, uppercase: true },
+    uid: { type: String, required: true, unique: true, trim: true, uppercase: true },
     email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
     phone: { type: String, required: true, trim: true, index: true },
     password: { type: String, select: false, minlength: 6 },

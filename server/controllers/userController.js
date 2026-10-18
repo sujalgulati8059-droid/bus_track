@@ -32,11 +32,14 @@ exports.register=async(req,res,next)=>{
 
 exports.login=async(req,res,next)=>{
   try{
-    const{email,password}=req.body;
-    if(!email||!password)return res.status(400).json({success:false,error:"Email and password required"});
-    const user=await User.findOne({email:email.toLowerCase()}).select("+password");
+    const{phone,email,password}=req.body;
+    if((!phone&&!email)||!password)return res.status(400).json({success:false,error:"Phone/email and password required"});
+    const filter=phone
+      ? {phone:{$in:[normalizePhone(phone),String(phone).trim()]}}
+      : {email:String(email).trim().toLowerCase()};
+    const user=await User.findOne(filter).select("+password");
     if(!user||!user.isActive||!(await user.comparePassword(password)))
-      return res.status(401).json({success:false,error:"Invalid email or password"});
+      return res.status(401).json({success:false,error:"Invalid phone/email or password"});
     user.lastLogin=new Date();await user.save({validateBeforeSave:false});
     sendUserTokenResponse(user,200,res);
   }catch(e){next(e);}
@@ -116,7 +119,10 @@ exports.sendSignupOtp = async (req, res, next) => {
       return res.status(400).json({ success: false, error: "Phone number is required" });
     }
     const normalized = normalizePhone(phone);
-    const existing = await User.findOne({ phone: normalized, isActive: true });
+    const existing = await User.findOne({
+      phone: { $in: [normalized, String(phone).trim()] },
+      isActive: true,
+    });
     if (existing) {
       return res.status(400).json({ success: false, error: "This phone number is already registered. Please log in." });
     }
@@ -144,7 +150,7 @@ exports.verifySignupOtp = async (req, res, next) => {
     const normalized = normalizePhone(phone);
     await verifyOtp({ phone: normalized, purpose: "student_signup", otp });
     const signupToken = jwt.sign(
-      { phone: normalized, purpose: "student_signup" },
+      { phone: normalized, purpose: "student_signup", uidVerified: false },
       process.env.JWT_SECRET,
       { expiresIn: "15m" }
     );
@@ -159,11 +165,6 @@ exports.verifySignupOtp = async (req, res, next) => {
     }
     res.status(400).json({ success: false, error: e.message });
   }
-};
-
-// Kept for backward compat but no longer required
-exports.verifyUid = async (req, res) => {
-  res.json({ success: true, verified: true, prefillName: '', signupToken: req.body.signupToken || '' });
 };
 
 // Step C: POST /api/users/uid/verify { uid } (requires signupToken)
@@ -225,6 +226,7 @@ exports.verifyUid = async (req, res, next) => {
   }
 };
 
+// Step D: POST /api/users/signup/complete { name, assignedRoute, assignedStops:[...] } (requires uid-verified token)
 exports.completeSignup = async (req, res, next) => {
   try {
     const token = getSignupToken(req);
@@ -237,36 +239,64 @@ exports.completeSignup = async (req, res, next) => {
     } catch (err) {
       return res.status(401).json({ success: false, error: "Invalid or expired signup token" });
     }
-    if (decoded.purpose !== "student_signup") {
-      return res.status(403).json({ success: false, error: "Invalid token purpose" });
+    if (decoded.purpose !== "student_signup" || !decoded.uidVerified || !decoded.uid) {
+      return res.status(403).json({ success: false, error: "UID verification required before completing signup" });
     }
 
+    // Phone and UID come strictly from the token, NEVER from request body
     const phone = decoded.phone;
-    const { name, assignedRoute, assignedStops, assignedStop, role } = req.body;
-    const fullName = String(name || "").trim();
-    if (!fullName) return res.status(400).json({ success: false, error: "Name is required" });
-    if (!assignedRoute) return res.status(400).json({ success: false, error: "Assigned route is required" });
+    const uid = decoded.uid;
+
+    const { name, assignedRoute, assignedStops, assignedStop, role, password } = req.body;
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
+    }
+    const fullName = String(name || decoded.prefillName || "").trim();
+    if (!fullName) {
+      return res.status(400).json({ success: false, error: "Name is required" });
+    }
+
+    if (!assignedRoute) {
+      return res.status(400).json({ success: false, error: "Assigned route is required" });
+    }
 
     const route = await Route.findOne({ routeNo: assignedRoute.toUpperCase(), isActive: true });
-    if (!route) return res.status(400).json({ success: false, error: "Selected route does not exist" });
+    if (!route) {
+      return res.status(400).json({ success: false, error: "Selected route does not exist" });
+    }
 
+    // Support multiple stops: assignedStops array
     let stops = [];
     if (Array.isArray(assignedStops) && assignedStops.length > 0) {
       stops = assignedStops.map(s => String(s).trim()).filter(Boolean);
     } else if (assignedStop) {
       stops = [String(assignedStop).trim()];
     }
-    if (stops.length === 0) return res.status(400).json({ success: false, error: "At least one stop is required" });
 
+    if (stops.length === 0) {
+      return res.status(400).json({ success: false, error: "At least one assigned stop is required" });
+    }
+
+    // Validate route and stops exist in Route
     const invalidStops = stops.filter(s => !route.stops.includes(s));
-    if (invalidStops.length > 0) return res.status(400).json({ success: false, error: `Stop(s) not on route: ${invalidStops.join(", ")}` });
+    if (invalidStops.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Selected stop(s) not on route ${route.routeNo}: ${invalidStops.join(", ")}`,
+      });
+    }
 
-    const existing = await User.findOne({ phone });
-    if (existing) return res.status(400).json({ success: false, error: "User with this phone is already registered" });
+    // Check if phone or uid already registered
+    const existing = await User.findOne({ $or: [{ phone }, { uid }] });
+    if (existing) {
+      return res.status(400).json({ success: false, error: "User with this phone or UID is already registered" });
+    }
 
     const user = await User.create({
       name: fullName,
+      uid,
       phone,
+      password,
       role: role && ["student", "faculty"].includes(role) ? role : "student",
       assignedRoute: route.routeNo,
       assignedStop: stops[0],
@@ -296,7 +326,7 @@ exports.sendLoginOtp = async (req, res, next) => {
       return res.status(400).json({ success: false, error: "Phone number is required" });
     }
     const normalized = normalizePhone(phone);
-    const user = await User.findOne({ phone: normalized, isActive: true });
+    const user = await User.findOne({ phone: { $in: [normalized, String(phone).trim()] }, isActive: true });
     if (!user) {
       return res.status(404).json({ success: false, error: "No student account found with this phone number. Please sign up." });
     }
@@ -323,9 +353,20 @@ exports.verifyLoginOtp = async (req, res, next) => {
     }
     const normalized = normalizePhone(phone);
     await verifyOtp({ phone: normalized, purpose: "student_login", otp });
-    const user = await User.findOne({ phone: normalized, isActive: true });
+    const user = await User.findOne({
+      phone: { $in: [normalized, String(phone).trim()] },
+      isActive: true,
+    }).select("+password");
     if (!user) {
       return res.status(404).json({ success: false, error: "User account not found" });
+    }
+    if (!user.password) {
+      const passwordSetupToken = jwt.sign(
+        { id: user._id, purpose: "student_password_setup" },
+        process.env.JWT_SECRET,
+        { expiresIn: "15m" }
+      );
+      return res.json({ success: true, requiresPasswordSetup: true, passwordSetupToken });
     }
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
@@ -335,5 +376,36 @@ exports.verifyLoginOtp = async (req, res, next) => {
       return res.status(e.statusCode).json({ success: false, error: e.message });
     }
     res.status(400).json({ success: false, error: e.message });
+  }
+};
+
+exports.setupPassword = async (req, res, next) => {
+  try {
+    const { password } = req.body;
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
+    }
+    let decoded;
+    try {
+      decoded = jwt.verify(getSignupToken(req), process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ success: false, error: "Invalid or expired password setup token" });
+    }
+    if (decoded.purpose !== "student_password_setup" || !decoded.id) {
+      return res.status(403).json({ success: false, error: "Invalid token purpose for password setup" });
+    }
+    const user = await User.findById(decoded.id).select("+password");
+    if (!user || !user.isActive) {
+      return res.status(404).json({ success: false, error: "User account not found" });
+    }
+    if (user.password) {
+      return res.status(409).json({ success: false, error: "A password is already set for this account" });
+    }
+    user.password = password;
+    user.lastLogin = new Date();
+    await user.save();
+    sendUserTokenResponse(user, 200, res);
+  } catch (e) {
+    next(e);
   }
 };
