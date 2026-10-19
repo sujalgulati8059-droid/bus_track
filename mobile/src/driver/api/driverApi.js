@@ -29,8 +29,10 @@ export const setupPassword = (password, setupToken) =>
 export const login = (identifier, password) =>
   client.post('/driver/login', { email: identifier, phone: identifier, password }).then((r) => r.data);
 
-export const googleLogin = (idToken) =>
-  client.post('/driver/auth/google', { idToken }).then((r) => r.data);
+export const googleLogin = (payload) =>
+  client
+    .post('/driver/auth/google', typeof payload === 'string' ? { idToken: payload } : payload)
+    .then((r) => r.data);
 
 export const registerDriver = (form) =>
   client.post('/driver/register', form).then((r) => r.data);

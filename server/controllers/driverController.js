@@ -131,21 +131,63 @@ exports.stopLocation = (req, res) => {
   res.json({ success: true });
 };
 
-// POST /api/driver/auth/google { idToken }
+// POST /api/driver/auth/google { idToken, routeNo, phone, password }
 exports.googleAuth = async (req, res, next) => {
   try {
-    const { idToken } = req.body;
+    const { idToken, routeNo, phone, password } = req.body;
     if (!idToken) return res.status(400).json({ success: false, error: "idToken required" });
 
     const decoded = await admin.auth().verifyIdToken(idToken);
     const email = decoded.email?.toLowerCase();
     if (!email) return res.status(400).json({ success: false, error: "Google account has no email" });
 
-    const driver = await Driver.findOne({ email, isActive: true, status: "approved" });
+    let driver = await Driver.findOne({
+      $or: [
+        { email },
+        ...(phone ? [{ phone: normalizePhone(phone) }] : [])
+      ]
+    }).select("+password");
+
     if (!driver) {
-      return res.status(403).json({ success: false, error: "No approved driver account found for this Google account. Contact the transport office." });
+      if (routeNo) {
+        const routeClean = String(routeNo).trim().toUpperCase();
+        const routeObj = await Route.findOne({ routeNo: routeClean });
+        if (!routeObj) {
+          return res.status(400).json({ success: false, error: "That route does not exist" });
+        }
+
+        const normPhone = phone ? normalizePhone(phone) : `+9199999${Math.floor(10000 + Math.random() * 90000)}`;
+
+        driver = await Driver.create({
+          name: decoded.name || "Driver",
+          email,
+          phone: normPhone,
+          routeNo: routeClean,
+          password: password && password.length >= 6 ? password : undefined,
+          status: "approved",
+          isActive: true,
+        });
+      } else {
+        return res.json({
+          success: true,
+          isNewDriver: true,
+          email,
+          name: decoded.name || "",
+          googleToken: idToken,
+        });
+      }
     }
 
+    if (password && password.length >= 6 && !driver.password) {
+      driver.password = password;
+    }
+
+    if (driver.status === "rejected") {
+      return res.status(403).json({ success: false, error: "Your account was rejected. Contact the transport office." });
+    }
+
+    driver.isActive = true;
+    driver.status = "approved";
     driver.lastLogin = new Date();
     await driver.save({ validateBeforeSave: false });
     sendDriverTokenResponse(driver, 200, res);

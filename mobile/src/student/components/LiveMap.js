@@ -106,7 +106,9 @@ function buildHtml() {
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script>
     if (typeof L === 'undefined') {
-      document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\\/script>');
+      var _s = document.createElement('script');
+      _s.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js';
+      document.head.appendChild(_s);
     }
   </script>
   <script>
@@ -445,7 +447,7 @@ export default function LiveMap({ buses, route, myStop, myStops }) {
           key={reloadKey}
           ref={webRef}
           originWhitelist={['*']}
-          source={{ html: HTML, baseUrl: 'https://unpkg.com' }}
+          source={{ html: HTML, baseUrl: 'https://cdn.jsdelivr.net' }}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           allowFileAccess={true}
