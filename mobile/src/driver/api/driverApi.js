@@ -46,6 +46,7 @@ export const getRoutes = () =>
   client.get('/routes?limit=116').then((r) => r.data.routes || []);
 
 export const getMe = () => client.get('/driver/me').then((r) => r.data);
+export const updateDriverProfile = (data) => client.put('/driver/profile', data).then((r) => r.data);
 
 export const getMyRoute = () => client.get('/driver/route').then((r) => r.data);
 

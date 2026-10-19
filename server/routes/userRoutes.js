@@ -16,6 +16,7 @@ const {
   sendLoginOtp,
   verifyLoginOtp,
   setupPassword,
+  googleAuth,
 } = require("../controllers/userController");
 const { protectUser } = require("../middleware/authMiddleware");
 const { otpIpLimiter, otpPhoneLimiter } = require("../services/otpService");
@@ -30,6 +31,9 @@ r.post("/signup/complete", otpIpLimiter, completeSignup);
 r.post("/login/otp/send", otpIpLimiter, otpPhoneLimiter, sendLoginOtp);
 r.post("/login/otp/verify", otpIpLimiter, otpPhoneLimiter, verifyLoginOtp);
 r.post("/password/setup", otpIpLimiter, setupPassword);
+
+// Google Auth (Passwordless Gmail Sign-In)
+r.post("/auth/google", googleAuth);
 
 // Existing Legacy Routes (Email & Password)
 r.post("/register", register);

@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const admin = require("../config/firebase");
 const User = require("../models/User"), Route = require("../models/Route"), DailyTravelStatus = require("../models/DailyTravelStatus"), StudentRecord = require("../models/StudentRecord"), { sendUserTokenResponse } = require("../services/authService");
 const { normalizePhone, generateAndSendOtp, verifyOtp } = require("../services/otpService");
 
@@ -409,3 +410,64 @@ exports.setupPassword = async (req, res, next) => {
     next(e);
   }
 };
+
+// POST /api/users/auth/google { idToken, assignedRoute, assignedStop, assignedStops }
+exports.googleAuth = async (req, res, next) => {
+  try {
+    const { idToken, assignedRoute, assignedStop, assignedStops } = req.body;
+    if (!idToken) return res.status(400).json({ success: false, error: "idToken required" });
+
+    const decoded = await admin.verifyGoogleToken(idToken);
+    const email = decoded.email?.toLowerCase();
+    if (!email) return res.status(400).json({ success: false, error: "Google account has no email" });
+
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      if (assignedRoute) {
+        const stopsList =
+          assignedStops && assignedStops.length > 0
+            ? assignedStops
+            : assignedStop
+            ? [assignedStop]
+            : ["CU"];
+
+        const routeClean = String(assignedRoute).trim().toUpperCase();
+
+        user = await User.create({
+          name: decoded.name || email.split("@")[0],
+          email,
+          uid: undefined,
+          phone: decoded.phone_number || undefined,
+          assignedRoute: routeClean,
+          assignedStop: stopsList[0] || "CU",
+          assignedStops: stopsList,
+          isActive: true,
+          role: "student",
+        });
+      } else {
+        return res.json({
+          success: true,
+          isNewStudent: true,
+          email,
+          name: decoded.name || email.split("@")[0],
+          googleToken: idToken,
+        });
+      }
+    } else {
+      if (assignedRoute) user.assignedRoute = String(assignedRoute).trim().toUpperCase();
+      if (assignedStop) user.assignedStop = assignedStop;
+      if (assignedStops && assignedStops.length > 0) user.assignedStops = assignedStops;
+    }
+
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+    sendUserTokenResponse(user, 200, res);
+  } catch (e) {
+    if (e.code?.startsWith("auth/")) {
+      return res.status(401).json({ success: false, error: "Invalid or expired Google token" });
+    }
+    next(e);
+  }
+};
+

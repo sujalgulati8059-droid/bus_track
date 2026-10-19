@@ -21,6 +21,7 @@ const {
   verifyDriverLoginOtp,
   setupPassword,
   googleAuth,
+  updateDriverProfile,
 } = require("../controllers/driverController");
 const { protectDriver } = require("../middleware/authMiddleware");
 const { otpIpLimiter, otpPhoneLimiter } = require("../services/otpService");
@@ -56,6 +57,7 @@ r.post("/login", login);
 r.post("/auth/google", googleAuth);
 r.post("/logout", protectDriver, logout);
 r.get("/me", protectDriver, getMe);
+r.put("/profile", protectDriver, updateDriverProfile);
 r.get("/route", protectDriver, getMyRoute);
 r.put("/route/schedule/:day", protectDriver, updateDaySchedule);
 r.put("/status", protectDriver, setTodayStatus);

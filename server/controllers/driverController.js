@@ -27,10 +27,19 @@ exports.login = async (req, res, next) => {
       queryConditions.push({ phone: normalizedPhone });
     } catch {}
 
+    const cleanDigits = identifier.replace(/\D/g, "");
+    if (cleanDigits.length >= 10) {
+      const last10 = cleanDigits.slice(-10);
+      queryConditions.push({ phone: last10 });
+      queryConditions.push({ phone: `+91${last10}` });
+      queryConditions.push({ phone: `91${last10}` });
+      queryConditions.push({ phone: new RegExp(`${last10}$`) });
+    }
+
     const driver = await Driver.findOne({ $or: queryConditions }).select("+password");
 
     if (!driver || !(await driver.comparePassword(password))) {
-      return res.status(401).json({ success: false, error: "Invalid login credentials" });
+      return res.status(401).json({ success: false, error: "Invalid credentials. Enter your Route ID (e.g. R-01), email, or 10-digit mobile and password." });
     }
 
     if (driver.status === "pending") {
@@ -137,16 +146,31 @@ exports.googleAuth = async (req, res, next) => {
     const { idToken, routeNo, phone, password } = req.body;
     if (!idToken) return res.status(400).json({ success: false, error: "idToken required" });
 
-    const decoded = await admin.auth().verifyIdToken(idToken);
+    const decoded = await admin.verifyGoogleToken(idToken);
     const email = decoded.email?.toLowerCase();
     if (!email) return res.status(400).json({ success: false, error: "Google account has no email" });
 
-    let driver = await Driver.findOne({
-      $or: [
-        { email },
-        ...(phone ? [{ phone: normalizePhone(phone) }] : [])
-      ]
-    }).select("+password");
+    const phoneConditions = [];
+    let normPhone = undefined;
+    if (phone) {
+      try {
+        normPhone = normalizePhone(phone);
+        phoneConditions.push({ phone: normPhone });
+      } catch {}
+      const cleanP = String(phone).replace(/\D/g, "");
+      if (cleanP.length >= 10) {
+        const last10 = cleanP.slice(-10);
+        phoneConditions.push({ phone: last10 });
+        phoneConditions.push({ phone: `+91${last10}` });
+      }
+    }
+
+    const searchOr = [{ email }, ...phoneConditions];
+    if (routeNo) {
+      searchOr.push({ routeNo: String(routeNo).trim().toUpperCase() });
+    }
+
+    let driver = await Driver.findOne({ $or: searchOr }).select("+password");
 
     if (!driver) {
       if (routeNo) {
@@ -156,7 +180,9 @@ exports.googleAuth = async (req, res, next) => {
           return res.status(400).json({ success: false, error: "That route does not exist" });
         }
 
-        const normPhone = phone ? normalizePhone(phone) : `+9199999${Math.floor(10000 + Math.random() * 90000)}`;
+        if (!normPhone) {
+          normPhone = `+9199999${Math.floor(10000 + Math.random() * 90000)}`;
+        }
 
         driver = await Driver.create({
           name: decoded.name || "Driver",
@@ -176,10 +202,19 @@ exports.googleAuth = async (req, res, next) => {
           googleToken: idToken,
         });
       }
-    }
-
-    if (password && password.length >= 6 && !driver.password) {
-      driver.password = password;
+    } else {
+      if (!driver.email || driver.email.includes("@cu.ac.in")) {
+        driver.email = email;
+      }
+      if (normPhone) {
+        driver.phone = normPhone;
+      }
+      if (password && password.length >= 6) {
+        driver.password = password;
+      }
+      if (routeNo) {
+        driver.routeNo = String(routeNo).trim().toUpperCase();
+      }
     }
 
     if (driver.status === "rejected") {
@@ -477,3 +512,34 @@ exports.setupPassword = async (req, res, next) => {
     next(e);
   }
 };
+
+// PUT /api/driver/profile { phone, password, name } (protected)
+exports.updateDriverProfile = async (req, res, next) => {
+  try {
+    const { phone, password, name } = req.body;
+    const driver = await Driver.findById(req.driver._id).select("+password");
+    if (!driver) return res.status(404).json({ success: false, error: "Driver not found" });
+
+    if (name && name.trim().length >= 2) driver.name = name.trim();
+    if (phone) {
+      try {
+        driver.phone = normalizePhone(phone);
+      } catch (err) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
+    }
+    if (password && password.length >= 6) {
+      driver.password = password;
+    }
+
+    await driver.save();
+    res.json({
+      success: true,
+      message: "Driver profile updated successfully",
+      data: { driver },
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+

@@ -2,13 +2,13 @@ const mongoose = require("mongoose"), bcrypt = require("bcryptjs");
 const s = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    uid: { type: String, required: true, unique: true, trim: true, uppercase: true },
+    uid: { type: String, unique: true, sparse: true, trim: true, uppercase: true },
     email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
-    phone: { type: String, required: true, trim: true, index: true },
+    phone: { type: String, sparse: true, trim: true, index: true },
     password: { type: String, select: false, minlength: 6 },
     role: { type: String, enum: ["student", "faculty"], default: "student" },
-    assignedRoute: { type: String, required: true },
-    assignedStop: { type: String, required: true },
+    assignedRoute: { type: String, default: "R-01" },
+    assignedStop: { type: String, default: "CU" },
     assignedStops: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },
     lastLogin: Date,

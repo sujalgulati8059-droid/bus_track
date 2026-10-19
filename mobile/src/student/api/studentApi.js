@@ -37,6 +37,11 @@ export const sendLoginOtp = (phone) =>
 export const verifyLoginOtp = (phone, otp) =>
   client.post('/users/login/otp/verify', { phone, otp }).then((r) => r.data);
 
+export const googleLogin = (payload) =>
+  client
+    .post('/users/auth/google', typeof payload === 'string' ? { idToken: payload } : payload)
+    .then((r) => r.data);
+
 // ---- Legacy Auth / Profile ----
 export const login = (phone, password) =>
   client.post('/users/login', { phone, password }).then((r) => r.data);

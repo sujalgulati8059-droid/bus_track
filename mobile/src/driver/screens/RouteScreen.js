@@ -11,6 +11,7 @@ import {
   RefreshControl,
   Linking,
   Modal,
+  TextInput,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -19,6 +20,7 @@ import {
   getPassengers,
   startDriverTrip,
   stopDriverTrip,
+  updateDriverProfile,
 } from '../api/driverApi';
 import {
   startSharing,
@@ -50,6 +52,32 @@ export default function RouteScreen() {
   // Ping Telemetry State
   const [pingStatus, setPingStatus] = useState({ lastSent: null, retrying: false });
   const [secondsAgo, setSecondsAgo] = useState(0);
+
+  // Account Phone & Password Settings Modal State
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [accountPhone, setAccountPhone] = useState(driver?.phone || '');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountSaving, setAccountSaving] = useState(false);
+
+  const handleSaveAccount = async () => {
+    if (accountPassword && accountPassword.length < 6) {
+      return Alert.alert('Invalid Password', 'Password must be at least 6 characters.');
+    }
+    setAccountSaving(true);
+    try {
+      await updateDriverProfile({
+        phone: accountPhone.trim() || undefined,
+        password: accountPassword || undefined,
+      });
+      Alert.alert('Account Updated', 'Your mobile number and password have been saved successfully.');
+      setShowAccountModal(false);
+      setAccountPassword('');
+    } catch (e) {
+      Alert.alert('Save Failed', e?.response?.data?.error || e?.message || 'Could not update profile');
+    } finally {
+      setAccountSaving(false);
+    }
+  };
 
   const elapsedTimerRef = useRef(null);
   const secondsAgoTimerRef = useRef(null);
@@ -300,6 +328,17 @@ export default function RouteScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Account Settings Bar */}
+        <TouchableOpacity
+          style={styles.accountSettingsBar}
+          onPress={() => {
+            setAccountPhone(driver?.phone || '');
+            setShowAccountModal(true);
+          }}
+        >
+          <Text style={styles.accountSettingsBarText}>🔑 Set Up Phone Number & Password</Text>
+        </TouchableOpacity>
+
         {/* ============================================================ */}
         {/* LIVE TRIP CONTROL BAR */}
         {/* ============================================================ */}
@@ -478,6 +517,66 @@ export default function RouteScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ACCOUNT SETTINGS MODAL */}
+      <Modal visible={showAccountModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.dialogCard}>
+            <Text style={styles.dialogTitle}>Driver Account Settings</Text>
+            <Text style={styles.dialogBody}>
+              Set up your phone number and password so you can also log in directly using your Route ID ({route?.routeNo || driver?.routeNo}) or mobile number.
+            </Text>
+
+            <Text style={styles.modalLabel}>Assigned Route</Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: '#f1f5f9', color: '#64748b' }]}
+              value={route?.routeNo || driver?.routeNo || 'Route'}
+              editable={false}
+            />
+
+            <Text style={styles.modalLabel}>Mobile Number (10 digits)</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. 9876543210"
+              placeholderTextColor="#94a3b8"
+              keyboardType="phone-pad"
+              value={accountPhone}
+              onChangeText={setAccountPhone}
+            />
+
+            <Text style={styles.modalLabel}>New Password (min 6 characters)</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Enter new password"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry
+              value={accountPassword}
+              onChangeText={setAccountPassword}
+            />
+
+            <View style={[styles.dialogButtons, { marginTop: 16 }]}>
+              <TouchableOpacity
+                style={styles.dialogCancelBtn}
+                onPress={() => setShowAccountModal(false)}
+                disabled={accountSaving}
+              >
+                <Text style={styles.dialogCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dialogConfirmBtn, { backgroundColor: '#f59e0b' }]}
+                onPress={handleSaveAccount}
+                disabled={accountSaving}
+              >
+                {accountSaving ? (
+                  <ActivityIndicator color="#0f172a" />
+                ) : (
+                  <Text style={[styles.dialogConfirmText, { color: '#0f172a' }]}>Save Settings</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -631,4 +730,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   dialogConfirmText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+
+  accountSettingsBar: {
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  accountSettingsBarText: {
+    color: '#b45309',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 14,
+    color: '#0f172a',
+  },
 });

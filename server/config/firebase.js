@@ -46,22 +46,69 @@ try {
   console.warn('[Firebase] Initialization skipped:', err.message);
 }
 
+async function verifyGoogleToken(token) {
+  if (!token) {
+    const err = new Error("Google token is required");
+    err.code = "auth/argument-error";
+    throw err;
+  }
+
+  // 1. Try Firebase Admin if available
+  if (adminAuth && typeof adminAuth.verifyIdToken === "function") {
+    try {
+      const decoded = await adminAuth.verifyIdToken(token);
+      if (decoded && decoded.email) {
+        return {
+          email: decoded.email.toLowerCase(),
+          name: decoded.name || decoded.email.split("@")[0],
+          sub: decoded.sub || decoded.uid,
+          picture: decoded.picture,
+          uid: decoded.uid || decoded.sub,
+        };
+      }
+    } catch (fbErr) {
+      // Continue to Google tokeninfo fallback
+    }
+  }
+
+  // 2. Try Google OAuth2 tokeninfo (works directly with Google Sign-In idToken)
+  try {
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`);
+    if (res.ok) {
+      const gData = await res.json();
+      if (gData && gData.email) {
+        return {
+          email: gData.email.toLowerCase(),
+          name: gData.name || gData.email.split("@")[0],
+          sub: gData.sub,
+          picture: gData.picture,
+          uid: gData.sub,
+        };
+      }
+    }
+  } catch (gErr) {
+    console.warn("[Firebase/Google] tokeninfo verification error:", gErr.message);
+  }
+
+  const err = new Error("Invalid or unverified Google token");
+  err.code = "auth/invalid-id-token";
+  throw err;
+}
+
 module.exports = {
   app: adminApp,
   auth: () => {
-    if (!adminAuth) {
-      const err = new Error('Firebase Auth is not configured on this server');
-      err.code = 'auth/not-configured';
-      throw err;
+    if (adminAuth) {
+      return {
+        ...adminAuth,
+        verifyIdToken: verifyGoogleToken,
+      };
     }
-    return adminAuth;
+    return {
+      verifyIdToken: verifyGoogleToken,
+    };
   },
-  verifyIdToken: async (token) => {
-    if (!adminAuth) {
-      const err = new Error('Firebase Auth is not configured on this server');
-      err.code = 'auth/not-configured';
-      throw err;
-    }
-    return await adminAuth.verifyIdToken(token);
-  }
+  verifyIdToken: verifyGoogleToken,
+  verifyGoogleToken,
 };
+
