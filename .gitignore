@@ -1,3 +1,11 @@
 **/.env*
 **/node_modules/
 **/build/
+**/.expo/
+**/dist/
+**/google-services*.json
+**/*.apk
+**/*.aab
+**/android/
+**/ios/
+*.zip
