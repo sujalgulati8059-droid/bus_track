@@ -4,6 +4,7 @@
 **/.expo/
 **/dist/
 **/google-services*.json
+!mobile/google-services.json
 **/*.apk
 **/*.aab
 **/android/

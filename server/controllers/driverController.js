@@ -152,6 +152,7 @@ exports.startTrip = async (req, res, next) => {
     const api = req.app.get("tracking");
     if (!api) return res.status(503).json({ success: false, error: "Tracking system unavailable" });
     const result = await api.startTrip(req.driver.routeNo, req.driver._id);
+    if (!result.ok) return res.status(503).json({ success: false, error: result.error });
     res.json({ success: true, message: "Trip started", routeNo: req.driver.routeNo, startedAt: result.startedAt });
   } catch (e) {
     next(e);
@@ -406,7 +407,7 @@ exports.submitDriverSignupRequest = async (req, res, next) => {
 
     // Block if phone already an active Driver or has a pending request
     const existingDriver = await Driver.findOne({
-      phone: { $in: [normalized, String(phone).trim()] },
+      phone: { $in: [normalized, String(signup.phone).trim()] },
       isActive: true,
       status: "approved",
     });
@@ -595,4 +596,3 @@ exports.updateDriverProfile = async (req, res, next) => {
     next(e);
   }
 };
-

@@ -13,8 +13,12 @@ const connectDB = require("./config/db"),
 
 const app = express();
 const server = http.createServer(app);
+const clientOrigins = (process.env.CLIENT_URL || "http://localhost:3000")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const io = new Server(server, {
-  cors: { origin: process.env.CLIENT_URL || "http://localhost:3000", methods: ["GET", "POST"] },
+  cors: { origin: clientOrigins, methods: ["GET", "POST"] },
 });
 
 connectDB();
@@ -22,7 +26,7 @@ connectDB();
 app.set("io", io);
 app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:3000", credentials: true }));
+app.use(cors({ origin: clientOrigins, credentials: true }));
 
 // Global rate limiter (skips real-time driver location updates)
 app.use(

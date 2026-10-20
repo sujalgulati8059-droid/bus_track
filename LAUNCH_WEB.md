@@ -49,7 +49,8 @@ Render service** and skip to step 3. One backend serves both the website and the
    Deploy. You get `https://YOUR-SITE.vercel.app`.
    (Netlify: base directory `client`, build command `npm run build`, publish directory `client/build`.)
 4. **Allow the website to call the API (CORS):** in Render set `CLIENT_URL=https://YOUR-SITE.vercel.app`
-   (exactly that, no trailing slash) and redeploy. Only one website address is allowed, so update it if you add a custom domain.
+   (exactly that, no trailing slash) and redeploy. To allow a custom domain too, comma-separate the origins:
+   `CLIENT_URL=https://YOUR-SITE.vercel.app,https://www.example.com`.
 5. Open the site: search a route, open Live Map, log in to Admin.
 
 Changing the backend URL later means changing the two `REACT_APP_` variables and redeploying the site,
@@ -62,7 +63,7 @@ Generate keys with `npx web-push generate-vapid-keys` and set `VAPID_PUBLIC_KEY`
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|
-| Site loads but data is empty / CORS error in browser console | `CLIENT_URL` on Render is missing or not exactly your site URL; redeploy after changing. |
+| Site loads but data is empty / CORS error in browser console | `CLIENT_URL` on Render is missing or does not exactly include the site origin; redeploy after changing. |
 | Calls go to the Vercel domain instead of the API | `REACT_APP_API_URL` not set at build time; set it and redeploy. |
 | Map shows "offline" | `REACT_APP_SOCKET_URL` wrong, or the free Render instance is asleep (wait about a minute). |
 | Admin login fails | Run `npm run create-admin` against the same database the server uses. |

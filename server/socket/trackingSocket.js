@@ -259,14 +259,19 @@ module.exports = (io) => {
 
   // Start trip for a route
   const startTrip = async (routeNo, driverId) => {
-    const b = buses.get(routeNo);
-    const now = new Date();
-    if (b) {
-      b.tripActive = true;
-      b.tripStartedAt = now;
-      b.driverId = driverId;
-      b.status = "enroute";
+    let b = buses.get(routeNo);
+    if (!b) {
+      await load();
+      b = buses.get(routeNo);
     }
+    if (!b) {
+      return { ok: false, error: `Route ${routeNo} is not ready for tracking` };
+    }
+    const now = new Date();
+    b.tripActive = true;
+    b.tripStartedAt = now;
+    b.driverId = driverId;
+    b.status = "enroute";
     try {
       await BusStatus.findOneAndUpdate(
         { routeNo, date: todayStr() },
@@ -277,7 +282,7 @@ module.exports = (io) => {
       console.error("Error updating BusStatus on trip start:", e.message);
     }
     io.emit("bus-status", { routeNo, live: true, status: "trip-started", startedAt: now });
-    return { startedAt: now };
+    return { ok: true, startedAt: now };
   };
 
   // Stop trip for a route

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "836483789246",
+    "project_id": "bus-track-cu",
+    "storage_bucket": "bus-track-cu.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:836483789246:android:c69382f02ff4cfde7c09ef",
+        "android_client_info": {
+          "package_name": "com.bustrackcu.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "836483789246-vnjk4jh4a7nr30gcj4tpljgnimjm4gip.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.bustrackcu.app",
+            "certificate_hash": "4814ad6183c1a0824a5a5d2f3e9c8d0fc4f39575"
+          }
+        },
+        {
+          "client_id": "836483789246-34i8nmdos28ma5cg0qb3lhs13vunbm0d.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBHtEaErrm7yAKBCUcLanVWIPUgWm15kOo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "836483789246-34i8nmdos28ma5cg0qb3lhs13vunbm0d.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

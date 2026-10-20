@@ -2,7 +2,6 @@ node_modules
 .expo
 dist
 .env
-google-services.json
 android
 ios
 *.apk
