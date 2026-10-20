@@ -3,6 +3,8 @@ One app, two modes: Student/Faculty and Driver.
 
 Driver sign-in accepts a phone number and password or Google. Driver accounts created with the app are activated immediately and signed in after registration; route selection happens during account creation, not at sign-in.
 
+Students can search for a bus by route number on the My Bus screen and open that route on the live map. Live location appears when that route's driver has started a trip and is sharing GPS.
+
     npm install
     npm install -g eas-cli
     eas login
