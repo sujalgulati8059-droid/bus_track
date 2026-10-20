@@ -29,3 +29,9 @@ export const setTodayStatus = (isWorking, reason) =>
   client.put('/driver/status', { isWorking, reason }).then((r) => r.data);
 
 export const getPassengers = () => client.get('/driver/passengers').then((r) => r.data);
+
+// Google sign-in (restored)
+export const googleLogin = (payload) =>
+  client
+    .post('/driver/auth/google', typeof payload === 'string' ? { idToken: payload } : payload)
+    .then((r) => r.data);

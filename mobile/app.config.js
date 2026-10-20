@@ -1,2 +1,8 @@
-// Plain Expo config - no Firebase / Google services needed any more.
-module.exports = ({ config }) => ({ ...config });
+module.exports = ({ config }) => ({
+  ...config,
+  android: {
+    ...config.android,
+    googleServicesFile:
+      process.env.GOOGLE_SERVICES_JSON || config.android.googleServicesFile,
+  },
+});
