@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginScreen from './screens/LoginScreen';
+import RegisterScreen from './screens/RegisterScreen';
 import RouteScreen from './screens/RouteScreen';
 
 function Root({ onSwitchRole }) {
   const { driver, checking } = useAuth();
+  const [registering, setRegistering] = useState(false);
+
   if (checking) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -14,7 +17,8 @@ function Root({ onSwitchRole }) {
     );
   }
   if (driver) return <RouteScreen />;
-  return <LoginScreen onSwitchRole={onSwitchRole} />;
+  if (registering) return <RegisterScreen onBack={() => setRegistering(false)} />;
+  return <LoginScreen onSwitchRole={onSwitchRole} onRegister={() => setRegistering(true)} />;
 }
 
 export default function DriverApp({ onSwitchRole }) {

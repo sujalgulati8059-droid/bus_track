@@ -23,6 +23,12 @@ const driverRequestSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
     },
+    vehicleNo: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: 20,
+    },
     status: {
       type: String,
       enum: ["pending", "approved", "rejected"],

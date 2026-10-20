@@ -24,7 +24,16 @@ s.pre("save", async function (next) {
   next();
 });
 s.methods.comparePassword = async function (p) {
-  if (!this.password) return false;
-  return bcrypt.compare(p, this.password);
+  if (!this.password || typeof p !== "string") return false;
+  // Normal case: bcrypt hash
+  if (/^\$2[aby]\$/.test(this.password)) return bcrypt.compare(p, this.password);
+  // Self-healing: drivers inserted by hand (Compass / insertMany) have a plain-text password.
+  // Accept it once and re-save so it gets hashed properly from now on.
+  if (this.password === p) {
+    this.markModified("password");
+    await this.save({ validateBeforeSave: false });
+    return true;
+  }
+  return false;
 };
 module.exports = mongoose.model("Driver", s);

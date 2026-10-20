@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
 const Driver = require("../models/Driver"), User = require("../models/User"), Route = require("../models/Route"), BusStatus = require("../models/BusStatus"), DailyTravelStatus = require("../models/DailyTravelStatus"), DriverRequest = require("../models/DriverRequest"), { sendDriverTokenResponse } = require("../services/authService"), { notifyRouteStatus, notifyAdminNewDriverRequest } = require("../services/pushService");
 const { normalizePhone, generateAndSendOtp, verifyOtp } = require("../services/otpService");
 const admin = require("../config/firebase");
@@ -6,51 +7,83 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const todayStr=()=>new Date().toISOString().slice(0,10);
 const todayDay=()=>DAYS[new Date().getDay()];
 
+// Route IDs are stored like "R-06 A" / "R-07A" - accept the common ways a driver types them.
+const routeVariants = (raw) => {
+  const up = String(raw || "").trim().toUpperCase();
+  const squashed = up.replace(/\s+/g, "");
+  const spaced = squashed.replace(/^(R-?\d+)([A-Z])$/, "$1 $2");
+  return [...new Set([up, squashed, spaced])];
+};
+
 exports.login = async (req, res, next) => {
   try {
-    const { email, phone, password } = req.body;
+    const { email, phone } = req.body;
+    const rawPassword = typeof req.body.password === "string" ? req.body.password : "";
     const identifier = String(email || phone || "").trim();
-    if (!identifier || !password) {
-      return res.status(400).json({ success: false, error: "Email, Route ID, or phone number and password required" });
+    if (!identifier || !rawPassword) {
+      return res.status(400).json({ success: false, error: "Enter your mobile number (or Route ID) and password" });
     }
 
-    const normalizedIdentifier = identifier.toLowerCase();
-    const queryConditions = [
-      { email: normalizedIdentifier },
-      { routeNo: identifier.toUpperCase() },
-      { routeNo: normalizedIdentifier.replace(/^driver\./i, "").replace(/@.*$/, "").toUpperCase() },
-      { phone: identifier }
+    const lower = identifier.toLowerCase();
+    const digits = identifier.replace(/\D/g, "");
+    const last10 = digits.length >= 10 ? digits.slice(-10) : "";
+
+    const conditions = [
+      { email: lower },
+      { routeNo: { $in: routeVariants(identifier) } },
+      { routeNo: { $in: routeVariants(lower.replace(/^driver\./i, "").replace(/@.*$/, "")) } },
+      { phone: identifier },
     ];
-
-    try {
-      const normalizedPhone = normalizePhone(identifier);
-      queryConditions.push({ phone: normalizedPhone });
-    } catch {}
-
-    const cleanDigits = identifier.replace(/\D/g, "");
-    if (cleanDigits.length >= 10) {
-      const last10 = cleanDigits.slice(-10);
-      queryConditions.push({ phone: last10 });
-      queryConditions.push({ phone: `+91${last10}` });
-      queryConditions.push({ phone: `91${last10}` });
-      queryConditions.push({ phone: new RegExp(`${last10}$`) });
+    if (last10) {
+      conditions.push({ phone: last10 }, { phone: `+91${last10}` }, { phone: `91${last10}` }, { phone: new RegExp(`${last10}$`) });
     }
 
-    const driver = await Driver.findOne({ $or: queryConditions }).select("+password");
+    // find() not findOne(): the same number can exist in two formats; pick the one whose password matches.
+    const candidates = await Driver.find({ $or: conditions }).select("+password");
+    // Phone keyboards often add a trailing space - try both.
+    const attempts = [...new Set([rawPassword, rawPassword.trim()])];
 
-    if (!driver || !(await driver.comparePassword(password))) {
-      return res.status(401).json({ success: false, error: "Invalid credentials. Enter your Route ID (e.g. R-01), email, or 10-digit mobile and password." });
+    let driver = null;
+    let noPasswordSet = false;
+    for (const d of candidates) {
+      if (!d.password) { noPasswordSet = true; continue; }
+      for (const pw of attempts) {
+        if (await d.comparePassword(pw)) { driver = d; break; }
+      }
+      if (driver) break;
+    }
+
+    if (!driver) {
+      // Maybe they signed up from the app and the admin hasn't approved them yet
+      if (last10) {
+        const reqs = await DriverRequest.find({ phone: new RegExp(`${last10}$`) }).sort({ createdAt: -1 }).select("+password");
+        for (const r of reqs) {
+          if (!r.password) continue;
+          let ok = false;
+          for (const pw of attempts) { if (await bcrypt.compare(pw, r.password)) { ok = true; break; } }
+          if (!ok) continue;
+          if (r.status === "pending") return res.status(403).json({ success: false, error: "Your request is waiting for admin approval. Please try again later." });
+          if (r.status === "rejected") return res.status(403).json({ success: false, error: "Your request was rejected" + (r.rejectReason ? ": " + r.rejectReason : ".") + " Contact the transport office." });
+        }
+      }
+      if (noPasswordSet && candidates.length === 1) {
+        return res.status(401).json({ success: false, error: "No password is set for this account yet. Contact the transport office." });
+      }
+      return res.status(401).json({
+        success: false,
+        error: candidates.length
+          ? "Wrong password. Please try again."
+          : "No driver account found with this number. New driver? Tap \"Request access\".",
+      });
     }
 
     if (driver.status === "pending") {
       return res.status(403).json({ success: false, error: "Your request is waiting for admin approval. Please try again later." });
     }
-
     if (driver.status === "rejected") {
       return res.status(403).json({ success: false, error: "Your account was rejected" + (driver.rejectReason ? ": " + driver.rejectReason : ".") + " Contact the transport office." });
     }
-
-    if (!driver.isActive) {
+    if (driver.isActive === false) {
       return res.status(403).json({ success: false, error: "Your account is deactivated. Contact the transport office." });
     }
 
@@ -62,24 +95,44 @@ exports.login = async (req, res, next) => {
   }
 };
 
-exports.register=async(req,res,next)=>{try{
-  const name=String(req.body.name||"").trim(),phone=String(req.body.phone||"").trim(),password=String(req.body.password||""),routeNo=String(req.body.routeNo||"").trim(),vehicleNo=String(req.body.vehicleNo||"").trim();
-  if(name.length<2)return res.status(400).json({success:false,error:"Enter your full name"});
-  if(!/^\d{10}$/.test(phone))return res.status(400).json({success:false,error:"Enter a valid 10-digit phone number"});
-  if(password.length<6)return res.status(400).json({success:false,error:"Password must be at least 6 characters"});
-  if(!routeNo||routeNo.endsWith("-R"))return res.status(400).json({success:false,error:"Select the route you drive"});
-  const route=await Route.findOne({routeNo});if(!route)return res.status(400).json({success:false,error:"That route does not exist"});
-  const existing=await Driver.findOne({phone});
-  if(existing){
-    if(existing.status==="pending")return res.status(400).json({success:false,error:"A request with this phone number is already waiting for approval"});
-    if(existing.status!=="rejected")return res.status(400).json({success:false,error:"This phone number is already registered. Please log in."});
-    existing.name=name;existing.password=password;existing.routeNo=routeNo;existing.vehicleNo=vehicleNo||undefined;existing.status="pending";existing.rejectReason=undefined;existing.reviewedAt=undefined;existing.isActive=true;await existing.save();
-  }else{
-    await Driver.create({name,phone,password,routeNo,vehicleNo:vehicleNo||undefined,status:"pending"});
+// Driver sign-up from the mobile app: creates a PENDING DriverRequest, which is exactly what the
+// website's "Driver Requests" tab lists. The admin approves there, then the driver can log in.
+exports.register = async (req, res, next) => {
+  try {
+    const name = String(req.body.name || "").trim();
+    const phone10 = String(req.body.phone || "").replace(/\D/g, "").slice(-10);
+    const password = String(req.body.password || "");
+    const routeNo = String(req.body.routeNo || "").trim().toUpperCase();
+    const vehicleNo = String(req.body.vehicleNo || "").trim();
+
+    if (name.length < 2) return res.status(400).json({ success: false, error: "Enter your full name" });
+    if (!/^[6-9]\d{9}$/.test(phone10)) return res.status(400).json({ success: false, error: "Enter a valid 10-digit mobile number" });
+    if (password.length < 6) return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
+    if (!routeNo || routeNo.endsWith("-R")) return res.status(400).json({ success: false, error: "Select the route you drive" });
+
+    const route = await Route.findOne({ routeNo });
+    if (!route) return res.status(400).json({ success: false, error: "That route does not exist" });
+
+    const phone = `+91${phone10}`;
+    const existing = await Driver.findOne({ phone: { $in: [phone10, phone, `91${phone10}`] }, status: { $ne: "rejected" } });
+    if (existing && existing.status !== "pending") {
+      return res.status(400).json({ success: false, error: "This mobile number is already registered. Please sign in." });
+    }
+    if (await DriverRequest.exists({ phone, status: "pending" })) {
+      return res.status(400).json({ success: false, error: "A request with this number is already waiting for approval" });
+    }
+
+    await DriverRequest.create({
+      name, phone, password, requestedRoute: route.routeNo,
+      vehicleNo: vehicleNo || undefined, status: "pending", phoneVerified: false,
+    });
+    req.app.get("io")?.emit("driver-request", { routeNo: route.routeNo });
+    res.status(201).json({ success: true, message: "Request sent. You can sign in once the admin approves it." });
+  } catch (e) {
+    if (e.code === 11000) return res.status(400).json({ success: false, error: "A request with this number is already waiting for approval" });
+    next(e);
   }
-  req.app.get("io")?.emit("driver-request",{routeNo});
-  res.status(201).json({success:true,message:"Request sent. You can log in once the admin approves it."});
-}catch(e){next(e);}};
+};
 
 exports.logout=(req,res)=>{res.cookie("driverJwt","loggedout",{expires:new Date(Date.now()+5000),httpOnly:true});res.json({success:true,message:"Logged out"});};
 

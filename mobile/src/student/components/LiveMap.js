@@ -3,11 +3,16 @@ import { View, StyleSheet, TouchableOpacity, Text, ActivityIndicator, Platform }
 import { WebView } from 'react-native-webview';
 import { stopCoords, CU_CENTER } from '../utils/stopCoords';
 
-// CartoDB Voyager - Fast, crisp, high-contrast, free, zero API key required,
-// and doesn't block mobile WebViews with 403 Forbidden like raw OSM tile servers often do.
-const TILE_PRIMARY = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-const TILE_BACKUP = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILE_ATTRIBUTION = '&copy; OpenStreetMap &copy; CARTO';
+import { SERVER_URL } from '../../config';
+
+const MAP_ORIGIN = /^https:\/\//.test(SERVER_URL) ? SERVER_URL : 'https://cu-bus-tracker.onrender.com';
+
+// Tile providers, tried in order. CARTO's free raster tiles now show an "API key required"
+// watermark, so use OpenStreetMap first and Esri as automatic fallback (both key-free).
+const TILE_PROVIDERS = [
+  { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 },
+  { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', attribution: 'Tiles &copy; Esri', maxZoom: 19 },
+];
 
 function buildHtml() {
   return `<!DOCTYPE html>
@@ -163,24 +168,24 @@ function buildHtml() {
           attributionControl: false
         }).setView([${CU_CENTER[0]}, ${CU_CENTER[1]}], 11);
 
-        // Primary: CartoDB tiles
-        var tiles = L.tileLayer('${TILE_PRIMARY}', {
-          maxZoom: 19,
-          subdomains: 'abcd',
-          attribution: '${TILE_ATTRIBUTION}'
-        });
-
-        // Backup tile layer if primary fails
-        tiles.on('tileerror', function() {
-          if (!tiles._failedOver) {
-            tiles._failedOver = true;
-            L.tileLayer('${TILE_BACKUP}', {
-              maxZoom: 19,
-              subdomains: 'abc'
-            }).addTo(map);
-          }
-        });
-        tiles.addTo(map);
+        var PROVIDERS = ${JSON.stringify(TILE_PROVIDERS)};
+        var providerIdx = 0, tileErrors = 0, tiles = null;
+        function useProvider(i) {
+          if (tiles) { map.removeLayer(tiles); }
+          var p = PROVIDERS[i];
+          tileErrors = 0;
+          tiles = L.tileLayer(p.url, { maxZoom: p.maxZoom, attribution: p.attribution });
+          tiles.on('tileerror', function() {
+            tileErrors++;
+            if (tileErrors >= 4 && providerIdx < PROVIDERS.length - 1) {
+              providerIdx++;
+              postToRN({ type: 'LOG', msg: 'Tile provider failed, switching to #' + providerIdx });
+              useProvider(providerIdx);
+            }
+          });
+          tiles.addTo(map);
+        }
+        useProvider(0);
 
         // CU Campus Hub Marker
         L.marker([${CU_CENTER[0]}, ${CU_CENTER[1]}], {
@@ -430,6 +435,8 @@ export default function LiveMap({ buses, route, myStop, myStops }) {
         setLoadError(null);
       } else if (data.type === 'ERROR') {
         console.warn('Map WebView error:', data.error);
+      } else if (data.type === 'LOG') {
+        console.log('Map:', data.msg);
       }
     } catch {}
   };
@@ -447,11 +454,9 @@ export default function LiveMap({ buses, route, myStop, myStops }) {
           key={reloadKey}
           ref={webRef}
           originWhitelist={['*']}
-          source={{ html: HTML, baseUrl: 'https://cdn.jsdelivr.net' }}
+          source={{ html: HTML, baseUrl: MAP_ORIGIN }}
           javaScriptEnabled={true}
           domStorageEnabled={true}
-          allowFileAccess={true}
-          allowUniversalAccessFromFileURLs={true}
           mixedContentMode="always"
           cacheEnabled={true}
           scalesPageToFit={false}

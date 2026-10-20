@@ -48,6 +48,7 @@ exports.approveDriverRequest = async (req, res, next) => {
     if (driver) {
       driver.name = request.name;
       driver.routeNo = route.routeNo;
+      if (request.vehicleNo) driver.vehicleNo = request.vehicleNo;
       driver.isActive = true;
       driver.status = "approved";
       driver.rejectReason = undefined;
@@ -58,6 +59,7 @@ exports.approveDriverRequest = async (req, res, next) => {
         name: request.name,
         phone: request.phone,
         routeNo: route.routeNo,
+        vehicleNo: request.vehicleNo || undefined,
         isActive: true,
         status: "approved",
         reviewedAt: new Date(),

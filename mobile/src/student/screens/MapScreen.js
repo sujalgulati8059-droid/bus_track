@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useSocket } from '../context/SocketContext';
-import { useAuth } from '../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import LiveMap from '../components/LiveMap';
-import { getRoutes, getBusEta } from '../api/studentApi';
+import { getBusEta } from '../api/studentApi';
 import { colors } from '../utils/theme';
 
 function formatLastSeen(isoStr) {
@@ -19,41 +19,22 @@ function formatLastSeen(isoStr) {
 // focusRoute = { routeNo, color, stops } passed from "My Bus" or "Find Route"
 export default function MapScreen({ focusRoute, onClearFocus }) {
   const { busPositions, connected } = useSocket();
-  const { user } = useAuth();
   const [onlyFocus, setOnlyFocus] = useState(true);
-  const [autoRoute, setAutoRoute] = useState(null);
-  const [selectedStop, setSelectedStop] = useState(user?.assignedStop || null);
+    const [selectedStop, setSelectedStop] = useState(null);
   const [etaData, setEtaData] = useState(null);
 
-  // If no focusRoute passed from other tabs, default to user's assigned route
+  // Students don't log in: use the stop they picked on "My Bus" / "Find Route" (saved on the phone).
   useEffect(() => {
-    if (!focusRoute && user?.assignedRoute && !autoRoute) {
-      getRoutes()
-        .then((routes) => {
-          const matched = routes.find((r) => r.routeNo === user.assignedRoute);
-          if (matched) setAutoRoute(matched);
-        })
-        .catch(() => {});
-    }
-  }, [focusRoute, user?.assignedRoute, autoRoute]);
+    AsyncStorage.multiGet(['student_my_stop', 'findRouteStop']).then((pairs) => {
+      const saved = pairs.map(([, v]) => v).find(Boolean);
+      if (saved) setSelectedStop((cur) => cur || saved);
+    }).catch(() => {});
+  }, []);
 
-  const activeRoute = focusRoute || autoRoute;
+  const activeRoute = focusRoute || null;
   const baseNo = activeRoute ? activeRoute.routeNo.replace(/-R$/, '') : null;
 
-  // Student stops list (multi-select preferred stops or single stop)
-  const myStops = useMemo(() => {
-    if (user?.assignedStops && user.assignedStops.length > 0) {
-      return user.assignedStops;
-    }
-    return user?.assignedStop ? [user.assignedStop] : [];
-  }, [user]);
-
-  // Set default selected stop if not set
-  useEffect(() => {
-    if (!selectedStop && myStops.length > 0) {
-      setSelectedStop(myStops[0]);
-    }
-  }, [selectedStop, myStops]);
+  const myStops = useMemo(() => (selectedStop ? [selectedStop] : []), [selectedStop]);
 
   // Filtered buses shown on map
   const buses = useMemo(() => {
@@ -184,7 +165,7 @@ export default function MapScreen({ focusRoute, onClearFocus }) {
       <LiveMap
         buses={buses}
         route={activeRoute}
-        myStop={selectedStop || user?.assignedStop}
+        myStop={selectedStop}
         myStops={myStops}
       />
     </View>

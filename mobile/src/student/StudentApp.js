@@ -1,8 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
-import { AuthProvider, useAuth } from "./context/AuthContext";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { SocketProvider } from "./context/SocketContext";
-import AuthScreen from "./screens/AuthScreen";
 import BusFinderScreen from "./screens/BusFinderScreen";
 import FindRouteScreen from "./screens/FindRouteScreen";
 import MapScreen from "./screens/MapScreen";
@@ -49,33 +47,11 @@ function MainTabs({ onSwitchRole }) {
   );
 }
 
-function Root({ onSwitchRole }) {
-  const { user, checking } = useAuth();
-
-  if (checking) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color={colors.brand} />
-      </View>
-    );
-  }
-
-  if (!user) {
-    return <AuthScreen onSwitchRole={onSwitchRole} />;
-  }
-
+export default function StudentApp({ onSwitchRole }) {
   return (
     <SocketProvider>
       <MainTabs onSwitchRole={onSwitchRole} />
     </SocketProvider>
-  );
-}
-
-export default function StudentApp({ onSwitchRole }) {
-  return (
-    <AuthProvider>
-      <Root onSwitchRole={onSwitchRole} />
-    </AuthProvider>
   );
 }
 
