@@ -10,16 +10,17 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { getRoutes, registerDriver } from '../api/driverApi';
+import { getRoutes } from '../api/driverApi';
+import { useAuth } from '../context/AuthContext';
 import PickerModal from '../../student/components/PickerModal';
 
 export default function RegisterScreen({ onBack }) {
-  const [form, setForm] = useState({ name: '', phone: '', password: '', vehicleNo: '', routeNo: '' });
+  const { signUp } = useAuth();
+  const [form, setForm] = useState({ name: '', phone: '', password: '', routeNo: '' });
   const [routes, setRoutes] = useState([]);
   const [picker, setPicker] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
 
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -43,14 +44,12 @@ export default function RegisterScreen({ onBack }) {
     if (!form.routeNo) return setError('Select the route you drive');
     setLoading(true);
     try {
-      await registerDriver({
+      await signUp({
         name: form.name.trim(),
         phone: form.phone.trim(),
         password: form.password,
         routeNo: form.routeNo,
-        vehicleNo: form.vehicleNo.trim(),
       });
-      setDone(true);
     } catch (e) {
       setError(
         e?.response?.data?.error ||
@@ -61,30 +60,14 @@ export default function RegisterScreen({ onBack }) {
     }
   };
 
-  if (done) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center' }]}>
-        <Text style={styles.title}>Request sent</Text>
-        <Text style={styles.body}>
-          The admin will review your request for route {form.routeNo}. Once approved, you can log in with your
-          phone number and password.
-        </Text>
-        <Text style={styles.body}>If login says "waiting for approval", try again later.</Text>
-        <TouchableOpacity style={styles.button} onPress={onBack}>
-          <Text style={styles.buttonText}>Back to login</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: '#fff' }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Driver request</Text>
-        <Text style={styles.subtitle}>The admin must approve your request before you can log in.</Text>
+        <Text style={styles.title}>Create driver account</Text>
+        <Text style={styles.subtitle}>Pick your route and set a password. You will be signed in right away.</Text>
 
         <TextInput
           key="r-name"
@@ -118,18 +101,6 @@ export default function RegisterScreen({ onBack }) {
           value={form.password}
           onChangeText={set('password')}
         />
-        <TextInput
-          key="r-vehicle"
-          style={styles.input}
-          placeholder="Bus number plate (optional)"
-          placeholderTextColor="#9ca3af"
-          autoCapitalize="characters"
-          autoComplete="off"
-          importantForAutofill="no"
-          value={form.vehicleNo}
-          onChangeText={set('vehicleNo')}
-        />
-
         <TouchableOpacity style={styles.select} onPress={() => setPicker(true)}>
           <Text style={form.routeNo ? styles.selectText : styles.placeholder}>
             {form.routeNo ? `${form.routeNo} - ${chosen?.routeName || ''}` : 'Select the route you drive'}
@@ -139,11 +110,11 @@ export default function RegisterScreen({ onBack }) {
         {!!error && <Text style={styles.error}>{error}</Text>}
 
         <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send request</Text>}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create account</Text>}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={onBack}>
-          <Text style={styles.back}>Already approved? Back to login</Text>
+          <Text style={styles.back}>Already have an account? Sign in</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -165,7 +136,6 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
   title: { fontSize: 28, fontWeight: '700', color: '#f97316', marginBottom: 4 },
   subtitle: { fontSize: 14, color: '#6b7280', marginBottom: 22 },
-  body: { fontSize: 15, color: '#374151', marginTop: 12, lineHeight: 22 },
   input: {
     color: '#0f172a',
     borderWidth: 1,

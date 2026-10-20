@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { getRoutes } from '../api/driverApi';
 
 export default function LoginScreen({ onSwitchRole, onRegister }) {
-  const { loginWithEmail, signInWithGoogle, completeGoogleRegistration } = useAuth();
+  const { loginWithPhone, signInWithGoogle, completeGoogleRegistration } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,12 +41,12 @@ export default function LoginScreen({ onSwitchRole, onRegister }) {
   const handleLogin = async () => {
     setError('');
     const id = identifier.trim();
-    if (!id) return setError('Enter your mobile number, Route ID or email');
+    if (!id) return setError('Enter your phone number');
     if (!password) return setError('Enter your password');
 
     setLoading(true);
     try {
-      await loginWithEmail(id, password);
+      await loginWithPhone(id, password);
     } catch (e) {
       if (e?.response) setError(e.response.data?.error || 'Login failed. Please try again.');
       else if (e?.code === 'ECONNABORTED') setError('Server is waking up. Wait 30 seconds and try again.');
@@ -106,7 +106,7 @@ export default function LoginScreen({ onSwitchRole, onRegister }) {
           </View>
           <Text style={styles.title}>BusTrack Pro</Text>
           <Text style={styles.sub}>
-            Sign in with Google or your mobile number & password to start GPS tracking.
+            Sign in with Google or your phone number and password to start GPS tracking.
           </Text>
         </View>
 
@@ -142,7 +142,7 @@ export default function LoginScreen({ onSwitchRole, onRegister }) {
             <View style={styles.dividerLine} />
           </View>
 
-          <Text style={styles.label}>Mobile number, Route ID or Email</Text>
+          <Text style={styles.label}>Phone number</Text>
           <TextInput
             style={styles.input}
             placeholder="Mobile number"

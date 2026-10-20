@@ -95,8 +95,7 @@ exports.login = async (req, res, next) => {
   }
 };
 
-// Driver sign-up from the mobile app: creates a PENDING DriverRequest, which is exactly what the
-// website's "Driver Requests" tab lists. The admin approves there, then the driver can log in.
+// Driver sign-up from the mobile app: creates the account immediately and signs the driver in.
 exports.register = async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim();
@@ -114,22 +113,37 @@ exports.register = async (req, res, next) => {
     if (!route) return res.status(400).json({ success: false, error: "That route does not exist" });
 
     const phone = `+91${phone10}`;
-    const existing = await Driver.findOne({ phone: { $in: [phone10, phone, `91${phone10}`] }, status: { $ne: "rejected" } });
-    if (existing && existing.status !== "pending") {
+    let driver = await Driver.findOne({ phone: { $in: [phone10, phone, `91${phone10}`] } }).select("+password");
+
+    if (driver && driver.password) {
+      if (await driver.comparePassword(password)) {
+        driver.lastLogin = new Date();
+        await driver.save({ validateBeforeSave: false });
+        return sendDriverTokenResponse(driver, 200, res);
+      }
       return res.status(400).json({ success: false, error: "This mobile number is already registered. Please sign in." });
     }
-    if (await DriverRequest.exists({ phone, status: "pending" })) {
-      return res.status(400).json({ success: false, error: "A request with this number is already waiting for approval" });
+
+    if (driver) {
+      driver.name = name;
+      driver.password = password;
+      driver.routeNo = route.routeNo;
+      if (vehicleNo) driver.vehicleNo = vehicleNo;
+      driver.isActive = true;
+      driver.status = "approved";
+      driver.lastLogin = new Date();
+      await driver.save();
+    } else {
+      driver = await Driver.create({
+        name, phone, password, routeNo: route.routeNo,
+        vehicleNo: vehicleNo || undefined, isActive: true, status: "approved", lastLogin: new Date(),
+      });
     }
 
-    await DriverRequest.create({
-      name, phone, password, requestedRoute: route.routeNo,
-      vehicleNo: vehicleNo || undefined, status: "pending", phoneVerified: false,
-    });
-    req.app.get("io")?.emit("driver-request", { routeNo: route.routeNo });
-    res.status(201).json({ success: true, message: "Request sent. You can sign in once the admin approves it." });
+    req.app.get("io")?.emit("driver-approved", { phone, driverName: name, routeNo: route.routeNo });
+    sendDriverTokenResponse(driver, 201, res);
   } catch (e) {
-    if (e.code === 11000) return res.status(400).json({ success: false, error: "A request with this number is already waiting for approval" });
+    if (e.code === 11000) return res.status(400).json({ success: false, error: "This mobile number is already registered. Please sign in." });
     next(e);
   }
 };

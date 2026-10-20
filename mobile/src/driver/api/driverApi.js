@@ -1,8 +1,8 @@
 import client from './client';
 
-// ---- Driver login / sign-up (Route ID, email or mobile + password) ----
+// ---- Driver login / sign-up (mobile + password) ----
 export const login = (identifier, password) =>
-  client.post('/driver/login', { email: identifier, phone: identifier, password }).then((r) => r.data);
+  client.post('/driver/login', { phone: identifier, password }).then((r) => r.data);
 
 export const registerDriver = (form) =>
   client.post('/driver/register', form).then((r) => r.data);

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { pingHealth } from './api/client';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import RouteScreen from './screens/RouteScreen';
@@ -8,6 +9,12 @@ import RouteScreen from './screens/RouteScreen';
 function Root({ onSwitchRole }) {
   const { driver, checking } = useAuth();
   const [registering, setRegistering] = useState(false);
+
+  useEffect(() => {
+    pingHealth().catch((error) => {
+      console.warn('Backend health check failed:', error.message);
+    });
+  }, []);
 
   if (checking) {
     return (

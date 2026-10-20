@@ -15,4 +15,10 @@ services:
       - key: MONGO_URI
         sync: false
       - key: CLIENT_URL
-        value: http://localhost:3000
+        value: https://bus-track-omega.vercel.app
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false

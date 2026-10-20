@@ -61,6 +61,7 @@ app.use("/api/notify", require("./routes/notifyRoutes"));
 app.use("/api/bus-status", require("./routes/busStatusRoutes"));
 
 app.get("/health", (req, res) => res.json({ ok: true }));
+app.get("/version", (req, res) => res.json({ build: "2026-10-20-driver-no-approval" }));
 app.get("/", (req, res) => res.json({ message: "BusTrack Pro v2.0" }));
 
 app.use(notFound);

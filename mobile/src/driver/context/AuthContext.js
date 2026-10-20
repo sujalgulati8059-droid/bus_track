@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { getDriverToken, setDriverToken } from '../api/client';
-import { getMe, login as apiLogin, googleLogin as apiGoogleLogin } from '../api/driverApi';
+import { getMe, login as apiLogin, googleLogin as apiGoogleLogin, registerDriver } from '../api/driverApi';
 
 try {
   GoogleSignin.configure({
@@ -37,8 +37,15 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const loginWithEmail = async (identifier, password) => {
-    const res = await apiLogin(identifier, password);
+  const loginWithPhone = async (phone, password) => {
+    const res = await apiLogin(phone, password);
+    await setDriverToken(res.token);
+    setDriver(res.data.driver);
+    return res;
+  };
+
+  const signUp = async (form) => {
+    const res = await registerDriver(form);
     await setDriverToken(res.token);
     setDriver(res.data.driver);
     return res;
@@ -86,7 +93,8 @@ export function AuthProvider({ children }) {
       value={{
         driver,
         checking,
-        loginWithEmail,
+        loginWithPhone,
+        signUp,
         signInWithGoogle,
         completeGoogleRegistration,
         logout,

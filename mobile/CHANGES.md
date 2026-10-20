@@ -1,7 +1,9 @@
 # BusTrack Pro Mobile - Changes & Migration Guide
 
+> Current driver flow: sign in with phone number and password or Google. App registration creates and signs in an active driver immediately; route selection is during account setup, not sign-in. The approval/OTP flow described in older notes below is historical and is not the current mobile registration flow.
+
 ## 1. Overview
-This update implements the full mobile frontend enhancements for the BusTrack Pro platform (Expo SDK 58 / React Native), corresponding to Prompt 2. It integrates seamlessly with the new backend (Phone OTP authentication, UID verification, driver approval workflows, route-locked trip tracking, and real-time socket events).
+This update implements the full mobile frontend enhancements for the BusTrack Pro platform (Expo SDK 58 / React Native), corresponding to Prompt 2. It integrates with the backend's student OTP authentication, immediate driver registration, route-locked trip tracking, and real-time socket events.
 
 ---
 
